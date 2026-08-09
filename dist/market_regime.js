@@ -128,7 +128,11 @@ export class MarketRegimeDetector {
      * Get current ATR value for position sizing
      */
     getATR(symbol) {
-        return this.atrValues.get(symbol) || 0;
+        const val = this.atrValues.get(symbol) || 0;
+        if (val === 0) {
+            console.log(`\x1b[90m[ATR] ${symbol}: 0 (insufficient price history)\x1b[0m`);
+        }
+        return val;
     }
     /**
      * Get EMA slope for momentum confirmation
@@ -149,5 +153,77 @@ export class MarketRegimeDetector {
     isTrending(symbol) {
         const regime = this.currentRegime.get(symbol);
         return regime === 'TRENDING_BULL' || regime === 'TRENDING_BEAR';
+    }
+    /**
+     * Get regime-adaptive parameter multipliers.
+     * Used by StrategyManager to adjust thresholds dynamically.
+     */
+    getRegimeMultipliers(symbol) {
+        const regime = this.currentRegime.get(symbol);
+        const atr = this.getATR(symbol);
+        const history = this.priceHistory.get(symbol) || [];
+        const recentSlice = history.slice(-20);
+        const avgPrice = recentSlice.length > 0 ? recentSlice.reduce((a, b) => a + b, 0) / recentSlice.length : 1;
+        const atrPct = atr / avgPrice;
+        switch (regime) {
+            case 'TRENDING_BULL':
+            case 'TRENDING_BEAR':
+                return {
+                    obiMultiplier: 0.8,
+                    zScoreMultiplier: 0.8,
+                    tpMultiplier: 1.3,
+                    slMultiplier: 0.9,
+                    confidenceBoost: 1.2
+                };
+            case 'RANGING':
+                return {
+                    obiMultiplier: 1.2,
+                    zScoreMultiplier: 1.2,
+                    tpMultiplier: 0.8,
+                    slMultiplier: 1.1,
+                    confidenceBoost: 1.0
+                };
+            case 'HIGH_VOLATILITY':
+                return {
+                    obiMultiplier: 1.4,
+                    zScoreMultiplier: 1.5,
+                    tpMultiplier: 0.7,
+                    slMultiplier: 1.4,
+                    confidenceBoost: 0.8
+                };
+            case 'LOW_VOLATILITY':
+                return {
+                    obiMultiplier: 0.7,
+                    zScoreMultiplier: 0.7,
+                    tpMultiplier: 1.5,
+                    slMultiplier: 0.8,
+                    confidenceBoost: 1.3
+                };
+            default:
+                return {
+                    obiMultiplier: 1.0,
+                    zScoreMultiplier: 1.0,
+                    tpMultiplier: 1.0,
+                    slMultiplier: 1.0,
+                    confidenceBoost: 1.0
+                };
+        }
+    }
+    /**
+     * Get current regime description for UI/debugging
+     */
+    getRegimeDebugInfo(symbol) {
+        const regime = this.currentRegime.get(symbol);
+        if (!regime)
+            return null;
+        const prices = this.priceHistory.get(symbol) || [];
+        const avgPrice = prices.length > 0 ? prices.reduce((a, b) => a + b, 0) / prices.length : 0;
+        const atr = this.getATR(symbol);
+        const slope = this.getEMASlope(symbol);
+        return {
+            regime,
+            atrPct: avgPrice > 0 ? atr / avgPrice : 0,
+            slope
+        };
     }
 }

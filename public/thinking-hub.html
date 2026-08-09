@@ -339,8 +339,18 @@
         <button class="tf-btn" data-tf="30m">30m</button>
         <button class="tf-btn" data-tf="1h">1h</button>
         <button class="tf-btn" data-tf="4h">4h</button>
+        <button class="tf-btn" data-tf="1d">1D</button>
+        <button class="tf-btn" data-tf="1w">1W</button>
+        <button class="tf-btn" data-tf="1M">1M</button>
+        <select id="candle-count" style="background:rgba(255,255,255,0.03);border:1px solid var(--border-light);color:var(--text-muted);padding:6px 10px;border-radius:6px;font-size:12px;font-family:'Outfit',sans-serif;cursor:pointer;">
+          <option value="100">100 Candles</option>
+          <option value="150">150 Candles</option>
+          <option value="200" selected>200 Candles</option>
+          <option value="250">250 Candles</option>
+          <option value="300">300 Candles</option>
+        </select>
         <span style="flex:1"></span>
-        <span id="chart-status" style="font-size:11px;color:var(--text-muted);align-self:center;">Memuat data...</span>
+        <span id="chart-status" style="font-size:11px;color:var(--text-muted);align-self:center;">Loading data...</span>
       </div>
     </div>
 
@@ -363,9 +373,25 @@
             </tr>
           </thead>
           <tbody id="trade-tbody">
-            <tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:30px;">Memuat history trade untuk <span id="trade-history-symbol-loading"></span>...</td></tr>
+            <tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:30px;">Loading trade history for <span id="trade-history-symbol-loading"></span>...</td></tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- AI TOP-DOWN MARKET ANALYSIS -->
+    <div class="thinking-section" id="timeframe-analysis-section" style="margin-top: 0px;">
+      <h3>&#x1F30D; AI Top-Down Market Analysis — <span id="tf-analysis-symbol">--</span></h3>
+      <div id="timeframe-analysis-content">
+        <div class="no-data">Waiting for AI timeframe analysis...</div>
+      </div>
+    </div>
+
+    <!-- ATR & VOLATILITY -->
+    <div class="thinking-section" id="atr-section" style="margin-top: 0px;">
+      <h3>&#x1F4C8; ATR & Volatility — <span id="atr-symbol">--</span></h3>
+      <div id="atr-content">
+        <div class="no-data">Waiting for ATR data...</div>
       </div>
     </div>
 
@@ -377,15 +403,15 @@
       <div class="thinking-section" id="thinking-section">
         <h3>&#x1F9E0; Proses Berpikir AI</h3>
         <div id="thinking-content">
-          <div class="no-data">Menunggu data dari AI Observer...</div>
+          <div class="no-data">Waiting for data from AI Observer...</div>
         </div>
       </div>
 
       <!-- Entry Analysis -->
       <div class="info-card" id="entry-card">
-        <h3>&#x1F4B0; Analisis Entry / Posisi</h3>
+        <h3>&#x1F4B0; Entry / Position Analysis</h3>
         <div id="entry-content">
-          <div class="no-data">Belum ada posisi aktif atau sinyal untuk simbol ini.</div>
+          <div class="no-data">No active positions or signals for this symbol.</div>
         </div>
       </div>
 
@@ -393,7 +419,7 @@
       <div class="info-card" id="params-card">
         <h3>&#x2699;&#xFE0F; Parameter & Risk</h3>
         <div id="params-content">
-          <div class="no-data">Menunggu data parameter...</div>
+          <div class="no-data">Waiting for parameter data...</div>
         </div>
       </div>
     </div>
@@ -437,6 +463,145 @@
         scaleMargins: { top: 0.1, bottom: 0.25 }
       }
     });
+
+    // ============================================================
+    // Drag-and-Drop for TP/SL Lines
+    // ============================================================
+    const DRAG_HANDLE_RATIO = 12; // pixel tolerance for line hit-testing
+
+    chartContainer.addEventListener('mousedown', (e) => {
+      if (!currentPosition) return;
+      const rect = chartContainer.getBoundingClientRect();
+      const mouseY = e.clientY - rect.top;
+      const mouseX = e.clientX - rect.left;
+      const chartHeight = rect.height;
+
+      // Helper: convert Y to price
+      const yToPrice = (y) => {
+        const priceScale = chart.priceScale(0);
+        const range = priceScale.getVisibleRange();
+        if (!range) return null;
+        const { min, max } = range;
+        return max - ((y / chartHeight) * (max - min));
+      };
+
+      // Check proximity to TP line
+      if (currentLines.tp !== null) {
+        const tpPrice = currentLines.tp;
+        const tpY = priceToY(tpPrice, chartHeight);
+        if (tpY && Math.abs(mouseY - tpY) < DRAG_HANDLE_RATIO) {
+          dragState = { active: true, type: 'tp', startY: mouseY, startPrice: tpPrice, currentPrice: tpPrice };
+          chartContainer.style.cursor = 'ns-resize';
+          e.preventDefault();
+          return;
+        }
+      }
+
+      // Check proximity to SL line
+      if (currentLines.sl !== null) {
+        const slPrice = currentLines.sl;
+        const slY = priceToY(slPrice, chartHeight);
+        if (slY && Math.abs(mouseY - slY) < DRAG_HANDLE_RATIO) {
+          dragState = { active: true, type: 'sl', startY: mouseY, startPrice: slPrice, currentPrice: slPrice };
+          chartContainer.style.cursor = 'ns-resize';
+          e.preventDefault();
+          return;
+        }
+      }
+    });
+
+    chartContainer.addEventListener('mousemove', (e) => {
+      if (!dragState.active) {
+        // Hover cursor feedback
+        const rect = chartContainer.getBoundingClientRect();
+        const mouseY = e.clientY - rect.top;
+        const chartHeight = rect.height;
+        let nearLine = false;
+        if (currentLines.tp !== null) {
+          const tpY = priceToY(currentLines.tp, chartHeight);
+          if (tpY && Math.abs(mouseY - tpY) < DRAG_HANDLE_RATIO) nearLine = true;
+        }
+        if (!nearLine && currentLines.sl !== null) {
+          const slY = priceToY(currentLines.sl, chartHeight);
+          if (slY && Math.abs(mouseY - slY) < DRAG_HANDLE_RATIO) nearLine = true;
+        }
+        chartContainer.style.cursor = nearLine ? 'ns-resize' : 'crosshair';
+        return;
+      }
+
+      const rect = chartContainer.getBoundingClientRect();
+      const mouseY = e.clientY - rect.top;
+      const chartHeight = rect.height;
+      const newPrice = yToPrice(mouseY);
+      if (newPrice === null) return;
+
+      dragState.currentPrice = newPrice;
+
+      // Update line data in real-time
+      if (dragState.type === 'tp' && currentLines.tp !== null) {
+        const startTime = currentCandleData.length > 0 ? currentCandleData[0].time : Math.floor(Date.now() / 1000) - 3600;
+        const endTime = currentCandleData.length > 0 ? currentCandleData[currentCandleData.length - 1].time + 120 : Math.floor(Date.now() / 1000) + 120;
+        tpLine.setData([
+          { time: startTime, value: newPrice },
+          { time: endTime, value: newPrice }
+        ]);
+        currentLines.tp = newPrice;
+      } else if (dragState.type === 'sl' && currentLines.sl !== null) {
+        const startTime = currentCandleData.length > 0 ? currentCandleData[0].time : Math.floor(Date.now() / 1000) - 3600;
+        const endTime = currentCandleData.length > 0 ? currentCandleData[currentCandleData.length - 1].time + 120 : Math.floor(Date.now() / 1000) + 120;
+        slLine.setData([
+          { time: startTime, value: newPrice },
+          { time: endTime, value: newPrice }
+        ]);
+        currentLines.sl = newPrice;
+      }
+    });
+
+    chartContainer.addEventListener('mouseup', (e) => {
+      if (!dragState.active) return;
+      const newPrice = dragState.currentPrice;
+      const type = dragState.type;
+
+      dragState = { active: false, type: null, startY: 0, startPrice: 0, currentPrice: 0 };
+      chartContainer.style.cursor = 'crosshair';
+
+      // Send update to backend
+      if (ws && ws.readyState === WebSocket.OPEN && newPrice) {
+        ws.send(JSON.stringify({
+          type: 'update_tp_sl',
+          symbol: symbol,
+          lineType: type,
+          newPrice: newPrice
+        }));
+      }
+    });
+
+    chartContainer.addEventListener('mouseleave', () => {
+      if (dragState.active) {
+        dragState = { active: false, type: null, startY: 0, startPrice: 0, currentPrice: 0 };
+        chartContainer.style.cursor = 'crosshair';
+      }
+    });
+
+    // Helper: price to Y coordinate
+    function priceToY(price, chartHeight) {
+      const priceScale = chart.priceScale(0);
+      const range = priceScale.getVisibleRange();
+      if (!range || price === undefined || price === null) return null;
+      const { min, max } = range;
+      const y = ((max - price) / (max - min)) * chartHeight;
+      return y;
+    }
+
+    // Helper: Y coordinate to price
+    function yToPrice(y, chartHeight) {
+      const priceScale = chart.priceScale(0);
+      const range = priceScale.getVisibleRange();
+      if (!range) return null;
+      const { min, max } = range;
+      const price = max - ((y / chartHeight) * (max - min));
+      return price;
+    }
 
     const candleSeries = chart.addCandlestickSeries({
       upColor: '#00ff87',
@@ -488,6 +653,14 @@
     let currentMarkers = [];
     // Track lines data
     let currentLines = { entry: null, tp: null, sl: null, trail: null };
+    // Drag state for TP/SL lines
+    let dragState = {
+      active: false,
+      type: null, // 'tp' | 'sl'
+      startY: 0,
+      startPrice: 0,
+      currentPrice: 0
+    };
 
     // ============================================================
     // Helper: Format USD
@@ -502,10 +675,13 @@
     // Fetch candle data from Hyperliquid REST API
     // ============================================================
     let currentTimeframe = '5m';
+    let selectedCandleCount = 200;
     const HYPERLIQUID_REST = 'https://api.hyperliquid.xyz';
 
     async function fetchCandles(tf) {
       const statusEl = document.getElementById('chart-status');
+      const candleSelect = document.getElementById('candle-count');
+      if (candleSelect) selectedCandleCount = parseInt(candleSelect.value);
       statusEl.textContent = `Memuat ${tf}...`;
       try {
         const now = Date.now();
@@ -514,8 +690,12 @@
         else if (tf === '30m') intervalMs = 30 * 60 * 1000;
         else if (tf === '1h') intervalMs = 60 * 60 * 1000;
         else if (tf === '4h') intervalMs = 4 * 60 * 60 * 1000;
+        else if (tf === '1d') intervalMs = 24 * 60 * 60 * 1000;
+        else if (tf === '1w') intervalMs = 7 * 24 * 60 * 60 * 1000;
+        else if (tf === '1M') intervalMs = 30 * 24 * 60 * 60 * 1000;
         
-        const startTime = now - (40 * intervalMs);
+        const candleLimit = (tf === '1d') ? 200 : (tf === '1w') ? 100 : (tf === '1M') ? 50 : selectedCandleCount;
+        const startTime = now - (candleLimit + 10) * intervalMs;
         
         const url = `${HYPERLIQUID_REST}/info`;
         const response = await fetch(url, {
@@ -529,7 +709,7 @@
         if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
         const data = await response.json();
         if (!data || !Array.isArray(data) || data.length === 0) {
-          statusEl.textContent = `Tidak ada data candle untuk ${symbol} (${tf})`;
+          statusEl.textContent = `No candle data for ${symbol} (${tf})`;
           return;
         }
         
@@ -570,6 +750,15 @@
         fetchCandles(currentTimeframe);
       });
     });
+
+    // Candle count handler
+    const candleSelect = document.getElementById('candle-count');
+    if (candleSelect) {
+      candleSelect.addEventListener('change', () => {
+        selectedCandleCount = parseInt(candleSelect.value);
+        fetchCandles(currentTimeframe);
+      });
+    }
 
     // ============================================================
     // WebSocket connection to get real-time thinking detail
@@ -698,15 +887,21 @@
       if (insight.rationale) {
         thinkingHtml += `
           <div class="thinking-item" style="border-left-color: var(--neon-orange);">
-            <span class="label" style="color: var(--neon-orange);">&#x1F4D1; Rasional</span>
+            <span class="label" style="color: var(--neon-orange);">&#x1F4D1; Rationale</span>
             <span class="text">${insight.rationale}</span>
           </div>`;
       }
 
       if (!thinkingHtml) {
-        thinkingHtml = `<div class="no-data">AI sedang mengevaluasi market untuk ${symbol}...</div>`;
+        thinkingHtml = `<div class="no-data">AI is evaluating market for ${symbol}...</div>`;
       }
       thinkingContent.innerHTML = thinkingHtml;
+
+      // --- Update Timeframe Analysis ---
+      updateTimeframeAnalysis(insight, symbol);
+
+      // --- Update ATR ---
+      updateATR(data, symbol);
 
       // --- Update Entry / Position Info ---
       const entryContent = document.getElementById('entry-content');
@@ -775,7 +970,7 @@
       } else {
         entryContent.innerHTML = `
           <div class="no-data">
-            Belum ada posisi aktif untuk ${symbol}.<br>
+            No active positions for ${symbol}.<br>
             AI sedang memantau dan menunggu sinyal entry yang tepat.
           </div>`;
         // Clear markers
@@ -989,7 +1184,7 @@
       }
 
       if (allTrades.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:30px;">Belum ada trade history untuk ${symbol}.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:30px;">No trade history for ${symbol}.</td></tr>`;
         return;
       }
 
@@ -1027,6 +1222,71 @@
       }).join('');
     }
 
+    // ============================================================
+    // Update Timeframe Analysis Section
+    // ============================================================
+    function updateTimeframeAnalysis(insight, sym) {
+      const container = document.getElementById('timeframe-analysis-content');
+      const symbolLabel = document.getElementById('tf-analysis-symbol');
+      if (!container || !insight) return;
+      symbolLabel.textContent = sym || '--';
+
+      const tfAnalysis = insight.timeframeAnalysis;
+      if (!tfAnalysis) {
+        container.innerHTML = '<div class="no-data">AI has not provided timeframe analysis for ' + sym + '.</div>';
+        return;
+      }
+
+      const layers = [
+        { key: 'macro', label: 'MACRO', emoji: '\u{1F4C8}', desc: '1M / 1w / 1d — Tren jangka panjang', color: 'var(--neon-purple)' },
+        { key: 'mid', label: 'MID', emoji: '\u{1F4CA}', desc: '4h / 1h / 30m — Tren intermediate', color: 'var(--neon-gold)' },
+        { key: 'micro', label: 'MICRO', emoji: '\u{1F3AF}', desc: '15m / 5m — Entry execution', color: 'var(--neon-cyan)' }
+      ];
+
+      let html = '';
+      for (const layer of layers) {
+        const data = tfAnalysis[layer.key];
+        if (!data) continue;
+        const trendClass = data.trend === 'BULLISH' ? 'value-bullish' : data.trend === 'BEARISH' ? 'value-bearish' : 'value-neutral';
+        html += `
+          <div class="thinking-item" style="border-left-color: ${layer.color}; margin-bottom: 10px;">
+            <span class="label" style="color: ${layer.color};">${layer.emoji} ${layer.label} <span style="font-weight:400;font-size:10px;color:var(--text-muted);">${layer.desc}</span></span>
+            <span class="text" style="font-weight:600;color:${data.trend === 'BULLISH' ? 'var(--neon-green)' : data.trend === 'BEARISH' ? 'var(--neon-red)' : 'var(--neon-gold)'};">${data.trend}</span>
+            <div style="font-size:12px;color:var(--text-main);margin-top:4px;">${data.summary || ''}</div>
+          </div>`;
+      }
+
+      if (!html) {
+        html = '<div class="no-data">AI has not provided timeframe analysis for ' + sym + '.</div>';
+      }
+      container.innerHTML = html;
+    }
+
+    function updateATR(data, sym) {
+      const container = document.getElementById('atr-content');
+      const symbolLabel = document.getElementById('atr-symbol');
+      if (!container || !data) return;
+      symbolLabel.textContent = sym || '--';
+
+      const atrData = data.atrData && data.atrData[sym];
+      if (!atrData) {
+        container.innerHTML = '<div class="no-data">ATR has not been calculated for ' + sym + '.</div>';
+        return;
+      }
+
+      const atr = atrData.atr;
+      const atrPct = atrData.atrPct;
+      const volatilityLabel = atrPct > 0.02 ? 'HIGH' : atrPct > 0.01 ? 'MEDIUM' : 'LOW';
+      const volatilityColor = atrPct > 0.02 ? 'var(--neon-red)' : atrPct > 0.01 ? 'var(--neon-gold)' : 'var(--neon-green)';
+
+      container.innerHTML = `
+        <div class="thinking-item" style="border-left-color: var(--neon-cyan);">
+          <span class="label" style="color: var(--neon-cyan);">&#x1F4C8; ATR (14)</span>
+          <span class="text" style="font-weight:600;">${atr.toFixed(4)}</span>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">ATR % of Price: <span style="color:${volatilityColor};font-weight:600;">${(atrPct * 100).toFixed(3)}%</span> (${volatilityLabel} Volatility)</div>
+        </div>`;
+    }
+
     // Listen for dashboard updates that include trade history
     // Modify connectWs to also handle dashboard_update for trade history
     const origWsMessage = ws?.onmessage;
@@ -1056,6 +1316,11 @@
           }
           // NEW: Update trade history from dashboard data
           updateTradeHistory(models);
+          // NEW: Update ATR from dashboard data
+          const firstModel = Object.values(models)[0];
+          if (firstModel) {
+            updateATR(firstModel, symbol);
+          }
         }
       } catch(e) {}
     }

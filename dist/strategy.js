@@ -28,6 +28,28 @@ export class StrategyManager {
     setCalculatedIndicators(symbol, indicators) {
         this.indicatorsCache[symbol] = indicators;
     }
+    // NEW: Manual strategy parameter overrides from Performance Lab
+    manualOverrides = {};
+    setStrategyOverride(symbol, key, value) {
+        if (!this.manualOverrides[symbol]) {
+            this.manualOverrides[symbol] = {};
+        }
+        this.manualOverrides[symbol][key] = value;
+    }
+    getStrategyOverride(symbol, key) {
+        return this.manualOverrides[symbol]?.[key];
+    }
+    clearStrategyOverride(symbol, key) {
+        if (!key) {
+            delete this.manualOverrides[symbol];
+        }
+        else {
+            delete this.manualOverrides[symbol]?.[key];
+        }
+    }
+    getAllOverrides() {
+        return this.manualOverrides;
+    }
     constructor() {
         // NEW: Initialize advanced modules
         this.marketMicro = new MarketMicrostructure();
@@ -86,6 +108,26 @@ export class StrategyManager {
             };
         }
         return snapshot;
+    }
+    getATR(symbol) {
+        return this.marketRegime.getATR(symbol);
+    }
+    getRegimeMultipliers(symbol) {
+        return this.marketRegime.getRegimeMultipliers(symbol);
+    }
+    getMarketRegimeInfo() {
+        const info = {};
+        for (const symbol of Object.keys(CONFIG.SYMBOLS)) {
+            const debug = this.marketRegime.getRegimeDebugInfo(symbol);
+            if (debug) {
+                info[symbol] = {
+                    regime: debug.regime,
+                    atrPct: parseFloat(debug.atrPct.toFixed(4)),
+                    slope: parseFloat(debug.slope.toFixed(6))
+                };
+            }
+        }
+        return info;
     }
     /**
      * Process a new OrderBook tick and check for high-probability signals.
@@ -282,20 +324,13 @@ export class StrategyManager {
             isInValueArea = midPrice >= volProfile.val && midPrice <= volProfile.vah;
         }
         // =========================================================================
-        // NEW: Regime-Based Adjustments
+        // NEW: Regime-Based Adjustments + Manual Overrides
         // =========================================================================
-        let adjustedObiThreshold = state.obiThreshold;
-        let adjustedZScoreThreshold = state.zScoreThreshold;
-        if (regime === 'HIGH_VOLATILITY') {
-            // Loosen thresholds in high vol (wider range)
-            adjustedObiThreshold *= 1.2;
-            adjustedZScoreThreshold *= 1.3;
-        }
-        else if (regime === 'LOW_VOLATILITY') {
-            // Tighten thresholds in low vol (smaller moves)
-            adjustedObiThreshold *= 0.8;
-            adjustedZScoreThreshold *= 0.7;
-        }
+        const regimeMultipliers = this.marketRegime.getRegimeMultipliers(book.symbol);
+        const obiOverride = this.manualOverrides[book.symbol]?.obiMultiplier ?? 1;
+        const zScoreOverride = this.manualOverrides[book.symbol]?.zScoreMultiplier ?? 1;
+        let adjustedObiThreshold = state.obiThreshold * regimeMultipliers.obiMultiplier * obiOverride;
+        let adjustedZScoreThreshold = state.zScoreThreshold * regimeMultipliers.zScoreMultiplier * zScoreOverride;
         // =========================================================================
         // EXECUTION TRIGGERS: Tick Imbalance & Momentum
         // =========================================================================
@@ -329,7 +364,8 @@ export class StrategyManager {
             longConfirmations++;
         if (isBuyAllowedByAI && isNearSupportLevel && hasLongImbalance && hasLongMicroPriceDivergence && isOversold && hasUpwardMomentum) {
             // NEW: Require minimum confirmations
-            if (longConfirmations < 2)
+            const minConf = this.manualOverrides[book.symbol]?.minConfirmations ?? 1;
+            if (longConfirmations < minConf)
                 return null;
             if (this.macroTrends['BTC'] === 'BEARISH') {
                 return null;
@@ -379,7 +415,8 @@ export class StrategyManager {
         if (isInValueArea)
             shortConfirmations++;
         if (isSellAllowedByAI && isNearResistanceLevel && hasShortImbalance && hasShortMicroPriceDivergence && isOverbought && hasDownwardMomentum) {
-            if (longConfirmations < 2)
+            const minConf = this.manualOverrides[book.symbol]?.minConfirmations ?? 1;
+            if (shortConfirmations < minConf)
                 return null;
             if (this.macroTrends['BTC'] === 'BULLISH') {
                 return null;

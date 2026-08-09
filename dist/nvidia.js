@@ -41,7 +41,7 @@ export class NvidiaObserver {
             }
         }
         const systemPrompt = `You are a premium quantitative strategist AI Observer for an advanced multi-timeframe swing/scalping trading bot.
-Your role is to analyze multi-timeframe candlestick data (5m, 15m, 30m, 1h, 4h), premium technical indicators (Fibonacci Retracements, Fair Value Gaps, Support & Resistance levels, Point of Control), global market dominance stats (BTC & USDT dominance), and recent trade outcomes.
+Your role is to analyze multi-timeframe candlestick data (5m, 15m, 30m, 1h, 4h, 1d, 1w, 1M), premium technical indicators (Fibonacci Retracements, Fair Value Gaps, Support & Resistance levels, Point of Control), global market dominance stats (BTC & USDT dominance), and recent trade outcomes.
 Using this information, determine the macro-to-micro market bias per symbol and optimize trading parameters dynamically for the next trading window.
 
 MARKET DOMINANCE DATA INTEGRATION:
@@ -50,7 +50,8 @@ MARKET DOMINANCE DATA INTEGRATION:
 
 MULTI-TIMEFRAME ANALYSIS MANDATE (TOP-DOWN ANALYSIS):
 Analyze the provided candle trends and premium indicators for each symbol across:
-- Macro Trend: 4-Hour (4h) and 1-Hour (1h). What is the primary swing structure?
+- Macro Trend: 4-Hour (4h), Daily (1d), Weekly (1w), and Monthly (1M). What is the primary swing structure?
+- Mid-Term Trend: 1-Hour (1h) and 30-Minute (30m). What is the intermediate direction?
 - Micro Trend: 15-Minute (15m) and 5-Minute (5m). What is the immediate execution direction?
 
 You must synthesize these timeframes:
@@ -85,7 +86,12 @@ REQUIRED JSON SCHEMA:
       "current_thoughts": "Apa yang sedang dipikirkan AI saat ini berdasarkan data market (dalam Bahasa Indonesia)",
       "planned_action": "Apa yang akan dan mau dilakukan AI selanjutnya (contoh: cari entry long, hold, dsb)",
       "waiting_for": "Apa kondisi yang sedang ditunggu (contoh: pullback ke fib 0.618, volume spike, dsb)",
-      "post_algorithm_thoughts": "Apa yang dipikirkan AI setelah mengevaluasi algoritma dan hasil parameter yang baru"
+      "post_algorithm_thoughts": "Apa yang dipikirkan AI setelah mengevaluasi algoritma dan hasil parameter yang baru",
+      "timeframeAnalysis": {
+        "macro": { "trend": "BULLISH" | "BEARISH" | "NEUTRAL", "summary": "Ringkasan tren jangka panjang dari 1M/1w/1d dalam Bahasa Indonesia" },
+        "mid": { "trend": "BULLISH" | "BEARISH" | "NEUTRAL", "summary": "Ringkasan tren intermediate dari 4h/1h/30m dalam Bahasa Indonesia" },
+        "micro": { "trend": "BULLISH" | "BEARISH" | "NEUTRAL", "summary": "Ringkasan kondisi mikro dari 15m/5m untuk entry dalam Bahasa Indonesia" }
+      }
     }
   }
 }
@@ -103,7 +109,12 @@ Example Response:
       "current_thoughts": "Momentum sedang kuat ke atas, indikator teknikal menunjukan dominasi buyer di zona ini.",
       "planned_action": "Mempersiapkan eksekusi LONG jika ada sedikit koreksi di timeframe kecil.",
       "waiting_for": "Tunggu FVG bullish 5m terisi sebagai konfirmasi entry optimal.",
-      "post_algorithm_thoughts": "Parameter R:R 1:3 sudah dilock, risiko terjaga, siap menangkap pergerakan naik selanjutnya."
+      "post_algorithm_thoughts": "Parameter R:R 1:3 sudah dilock, risiko terjaga, siap menangkap pergerakan naik selanjutnya.",
+      "timeframeAnalysis": {
+        "macro": { "trend": "BULLISH", "summary": "Monthly dan weekly candle forming higher highs, daily support di area $64K valid tanpa breakdown." },
+        "mid": { "trend": "BULLISH", "summary": "4h trending bullish dengan higher lows, 1h forming bullish FVG di $65K-66K." },
+        "micro": { "trend": "BULLISH", "summary": "15m oversold (Z-score -1.2), OBI accumulating, siap entry di pullback ke Fib 0.618." }
+      }
     }
   }
 }`;

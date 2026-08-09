@@ -719,10 +719,14 @@
            <span class="status-label">Run Mode</span>
            <span class="status-value sim" id="run-mode">LIVE SIMULATION</span>
          </div>
-         <div class="status-item">
-           <span class="status-label">Engine Status</span>
-           <span class="status-value" id="engine-status">ACTIVE</span>
-         </div>
+          <div class="status-item">
+            <span class="status-label">Engine Status</span>
+            <span class="status-value" id="engine-status">ACTIVE</span>
+          </div>
+          <div class="status-item">
+            <span class="status-label">Market Regime</span>
+            <span class="status-value" id="market-regime" style="color:var(--neon-gold);">--</span>
+          </div>
          <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--neon-cyan); box-shadow: 0 0 16px var(--neon-cyan);" id="heartbeat-led"></div>
        </div>
      </header>
@@ -815,7 +819,17 @@
     <!-- PORTFOLIO EQUITIES CHART PANEL -->
     <div class="panel">
       <div class="panel-header">
-        <h2 class="panel-title">Multi-Model Performance Tracker <span style="background: rgba(0, 242, 254, 0.08); color: var(--neon-cyan); border: 1px solid rgba(0, 242, 254, 0.15);">Live Multi-Line Equity Curve</span></h2>
+        <h2 class="panel-title">Performance Tracker <span id="period-badge" style="background: rgba(0, 242, 254, 0.08); color: var(--neon-cyan); border: 1px solid rgba(0, 242, 254, 0.15);">1D</span></h2>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <select id="period-select" style="background:rgba(255,255,255,0.03);border:1px solid var(--border-light);color:var(--text-main);padding:4px 8px;border-radius:6px;font-size:12px;font-family:'Outfit',sans-serif;cursor:pointer;">
+            <option value="1D">1 Day</option>
+            <option value="1W">1 Week</option>
+            <option value="1M">1 Month</option>
+            <option value="3M">Half Year</option>
+            <option value="1Y">1 Year</option>
+            <option value="ALL">All Time</option>
+          </select>
+        </div>
       </div>
       <div style="height: 340px; position: relative; width: 100%; padding: 5px 0;">
         <canvas id="equity-chart"></canvas>
@@ -940,6 +954,7 @@
 
         if (payload.type === 'dashboard_update') {
           cachedDashboardData = payload.data;
+          lastDataTimestamp = Date.now();
           updateUI(payload.data);
         }
       } catch (err) {
@@ -949,6 +964,7 @@
 
     ws.onopen = () => {
       console.log('Successfully connected to Antigravity HFT WebSocket Stream.');
+      ws.send(JSON.stringify({ type: 'request_dashboard_data' }));
     };
 
     ws.onclose = () => {
@@ -957,6 +973,24 @@
         window.location.reload();
       }, 3000);
     };
+
+    // Fallback: poll /api/dashboard every 2s if WebSocket hasn't delivered data yet
+    let lastDataTimestamp = 0;
+    setInterval(async () => {
+      if (!cachedDashboardData || Date.now() - lastDataTimestamp > 3000) {
+        try {
+          const res = await fetch('/api/dashboard');
+          if (res.ok) {
+            const data = await res.json();
+            cachedDashboardData = data;
+            updateUI(data);
+            lastDataTimestamp = Date.now();
+          }
+        } catch (err) {
+          // Silently fail; WebSocket may still deliver
+        }
+      }
+    }, 2000);
 
     function selectModel(modelId) {
       if (!modelConfigs[modelId]) return;
@@ -1002,15 +1036,37 @@
       return price.toFixed(4); 
     }
 
+    let selectedPeriod = '1D';
+
+    function getPeriodMs(period) {
+      switch (period) {
+        case '1D': return 24 * 60 * 60 * 1000;
+        case '1W': return 7 * 24 * 60 * 60 * 1000;
+        case '1M': return 30 * 24 * 60 * 60 * 1000;
+        case '3M': return 180 * 24 * 60 * 60 * 1000;
+        case '1Y': return 365 * 24 * 60 * 60 * 1000;
+        default: return Infinity;
+      }
+    }
+
     function drawEquityChart(modelsData) {
       if (!modelsData) return;
+
+      const periodSelect = document.getElementById('period-select');
+      const periodBadge = document.getElementById('period-badge');
+      if (periodSelect) selectedPeriod = periodSelect.value;
+      if (periodBadge) periodBadge.textContent = selectedPeriod === 'ALL' ? 'All Time' : selectedPeriod;
+
+      const cutoff = selectedPeriod === 'ALL' ? 0 : Date.now() - getPeriodMs(selectedPeriod);
 
       // Compile a unified timeline of unique exit timestamps across all models
       const allExitTimes = [];
       for (const [modelId, model] of Object.entries(modelsData)) {
         const history = model.tradesHistory || [];
         history.forEach(t => {
-          allExitTimes.push(t.exitTime);
+          if (cutoff === 0 || t.exitTime >= cutoff) {
+            allExitTimes.push(t.exitTime);
+          }
         });
       }
 
@@ -1025,7 +1081,9 @@
       Object.keys(modelConfigs).forEach(modelId => {
         datasetsData[modelId] = [0];
         runningPnl[modelId] = 0;
-        modelTradesSorted[modelId] = [...(modelsData[modelId]?.tradesHistory || [])].sort((a, b) => a.exitTime - b.exitTime);
+        modelTradesSorted[modelId] = [...(modelsData[modelId]?.tradesHistory || [])]
+          .filter(t => cutoff === 0 || t.exitTime >= cutoff)
+          .sort((a, b) => a.exitTime - b.exitTime);
       });
 
       uniqueTimes.forEach(time => {
@@ -1157,77 +1215,119 @@
       }
     }
 
-    function updateUI(data) {
-      if (!data || !data.models) return;
+    const periodSelect = document.getElementById('period-select');
+    if (periodSelect) {
+      periodSelect.addEventListener('change', () => {
+        selectedPeriod = periodSelect.value;
+        if (cachedDashboardData) {
+          drawEquityChart(cachedDashboardData.models);
+        }
+      });
+    }
 
-      // 0. Update Equity Curve Chart
-      drawEquityChart(data.models);
+     function updateUI(data) {
+       try {
+         if (!data || !data.models) return;
 
-      // Update Global Market Dominance from CoinGecko data
-      if (data.globalDominance) {
-        const btcDom = parseFloat(data.globalDominance.btcDom || 54.0);
-        const usdtDom = parseFloat(data.globalDominance.usdtDom || 5.5);
-        
-        const domBtcVal = document.getElementById('dom-btc-val');
-        const domBtcBar = document.getElementById('dom-btc-bar');
-        const domUsdtVal = document.getElementById('dom-usdt-val');
-        const domUsdtBar = document.getElementById('dom-usdt-bar');
-        
-        if (domBtcVal) domBtcVal.innerText = btcDom.toFixed(2) + '%';
-        if (domBtcBar) domBtcBar.style.width = Math.min(100, Math.max(0, btcDom)) + '%';
-        if (domUsdtVal) domUsdtVal.innerText = usdtDom.toFixed(2) + '%';
-        if (domUsdtBar) domUsdtBar.style.width = Math.min(100, Math.max(0, usdtDom * 10)) + '%'; // Scaled 10x for visual balance
-      }
+         // 0. Update Equity Curve Chart
+         drawEquityChart(data.models);
+
+         // Update Global Market Dominance from CoinGecko data
+         if (data.globalDominance) {
+           const btcDom = parseFloat(data.globalDominance.btcDom || 54.0);
+           const usdtDom = parseFloat(data.globalDominance.usdtDom || 5.5);
+           
+           const domBtcVal = document.getElementById('dom-btc-val');
+           const domBtcBar = document.getElementById('dom-btc-bar');
+           const domUsdtVal = document.getElementById('dom-usdt-val');
+           const domUsdtBar = document.getElementById('dom-usdt-bar');
+           
+           if (domBtcVal) domBtcVal.innerText = btcDom.toFixed(2) + '%';
+           if (domBtcBar) domBtcBar.style.width = Math.min(100, Math.max(0, btcDom)) + '%';
+           if (domUsdtVal) domUsdtVal.innerText = usdtDom.toFixed(2) + '%';
+           if (domUsdtBar) domUsdtBar.style.width = Math.min(100, Math.max(0, usdtDom * 10)) + '%'; // Scaled 10x for visual balance
+         }
 
 
 
-      // Extract current selected model data
-      const currentModel = data.models[currentModelId];
-      if (!currentModel) return;
+         // Extract current selected model data
+         const currentModel = data.models[currentModelId];
+         if (!currentModel) return;
 
-      const modelColor = modelConfigs[currentModelId].color;
+         const modelColor = modelConfigs[currentModelId].color;
 
-      // Update card borders and accents dynamically
-      document.getElementById('card-net-container').style.setProperty('--card-accent', modelColor);
-      document.getElementById('selected-model-label-net').innerText = `Net Profit (${modelConfigs[currentModelId].label})`;
+         // Update card borders and accents dynamically
+         const cardNetContainer = document.getElementById('card-net-container');
+         if (cardNetContainer) cardNetContainer.style.setProperty('--card-accent', modelColor);
+         const selectedModelLabelNet = document.getElementById('selected-model-label-net');
+         if (selectedModelLabelNet) selectedModelLabelNet.innerText = `Net Profit (${modelConfigs[currentModelId].label})`;
 
-      // Update system active toggle
-      // 1. Update Mode
-      document.getElementById('run-mode').innerText = data.simMode ? 'LIVE SIMULATION' : 'LIVE TRADING';
-      document.getElementById('run-mode').className = `status-value ${data.simMode ? 'sim' : ''}`;
+         // Update system active toggle
+         // 1. Update Mode
+         const runModeEl = document.getElementById('run-mode');
+         if (runModeEl) {
+           runModeEl.innerText = data.simMode ? 'LIVE SIMULATION' : 'LIVE TRADING';
+           runModeEl.className = `status-value ${data.simMode ? 'sim' : ''}`;
+         }
 
-      // 2. Update Selected Model Performance Metrics
-      const netPnlEl = document.getElementById('metric-net-pnl');
-      const netPnl = parseFloat(currentModel.stats.netProfitUsd);
-      
-      netPnlEl.innerText = formatUsd(netPnl);
-      netPnlEl.className = `metric-value pnl-text ${netPnl >= 0 ? 'positive' : 'negative'}`;
-      if (netPnl >= 0) {
-        netPnlEl.style.color = 'var(--neon-cyan)';
-        netPnlEl.style.textShadow = '0 0 10px rgba(0, 242, 254, 0.15)';
-      } else {
-        netPnlEl.style.color = 'var(--neon-red)';
-        netPnlEl.style.textShadow = '0 0 10px rgba(255, 42, 95, 0.15)';
-      }
-      
-      document.getElementById('metric-gross-pnl').innerText = formatUsd(currentModel.stats.grossProfitUsd);
-      document.getElementById('metric-gross-pnl').className = currentModel.stats.grossProfitUsd >= 0 ? 'pnl-text positive' : 'pnl-text negative';
-      
-      // Win Rate
-      const wrVal = parseFloat(currentModel.stats.winRate);
-      const wrEl = document.getElementById('metric-win-rate');
-      wrEl.innerText = `${wrVal.toFixed(2)}%`;
-      wrEl.style.color = wrVal >= 70 ? 'var(--neon-cyan)' : wrVal >= 50 ? 'var(--neon-gold)' : 'var(--neon-red)';
-      
-      document.getElementById('metric-wins').innerText = currentModel.stats.winningTrades;
-      document.getElementById('metric-losses').innerText = currentModel.stats.losingTrades;
-      
-      // Total Trades & Fees
-      document.getElementById('metric-total-trades').innerText = currentModel.stats.totalTrades;
-      document.getElementById('metric-fees').innerText = formatUsd(currentModel.stats.totalFeesUsd);
-      
-      // Avg Hold Duration
-      document.getElementById('metric-avg-hold').innerText = `${parseFloat(currentModel.stats.averageHoldTimeSec).toFixed(2)}s`;
+         // 1b. Update Market Regime (from first model's BTC regime)
+         const regimeEl = document.getElementById('market-regime');
+         if (regimeEl && data.models) {
+           const firstModel = Object.values(data.models)[0];
+           const btcRegime = firstModel?.marketRegime?.BTC || '--';
+           regimeEl.innerText = btcRegime;
+           const regimeColor = btcRegime === 'TRENDING_BULL' ? 'var(--neon-green)' : btcRegime === 'TRENDING_BEAR' ? 'var(--neon-red)' : btcRegime === 'HIGH_VOLATILITY' ? 'var(--neon-gold)' : 'var(--neon-cyan)';
+           regimeEl.style.color = regimeColor;
+         }
+
+         // 2. Update Selected Model Performance Metrics
+         const netPnlEl = document.getElementById('metric-net-pnl');
+         if (netPnlEl && currentModel.stats) {
+           const netPnl = parseFloat(currentModel.stats.netProfitUsd);
+           
+           netPnlEl.innerText = formatUsd(netPnl);
+           netPnlEl.className = `metric-value pnl-text ${netPnl >= 0 ? 'positive' : 'negative'}`;
+           if (netPnl >= 0) {
+             netPnlEl.style.color = 'var(--neon-cyan)';
+             netPnlEl.style.textShadow = '0 0 10px rgba(0, 242, 254, 0.15)';
+           } else {
+             netPnlEl.style.color = 'var(--neon-red)';
+             netPnlEl.style.textShadow = '0 0 10px rgba(255, 42, 95, 0.15)';
+           }
+         }
+         
+         const grossPnlEl = document.getElementById('metric-gross-pnl');
+         if (grossPnlEl && currentModel.stats) {
+           grossPnlEl.innerText = formatUsd(currentModel.stats.grossProfitUsd);
+           grossPnlEl.className = currentModel.stats.grossProfitUsd >= 0 ? 'pnl-text positive' : 'pnl-text negative';
+         }
+         
+         // Win Rate
+         if (currentModel.stats) {
+           const wrVal = parseFloat(currentModel.stats.winRate);
+           const wrEl = document.getElementById('metric-win-rate');
+           if (wrEl) {
+             wrEl.innerText = `${wrVal.toFixed(2)}%`;
+             wrEl.style.color = wrVal >= 70 ? 'var(--neon-cyan)' : wrVal >= 50 ? 'var(--neon-gold)' : 'var(--neon-red)';
+           }
+           
+           const winsEl = document.getElementById('metric-wins');
+           if (winsEl) winsEl.innerText = currentModel.stats.winningTrades;
+           
+           const lossesEl = document.getElementById('metric-losses');
+           if (lossesEl) lossesEl.innerText = currentModel.stats.losingTrades;
+           
+           // Total Trades & Fees
+           const totalTradesEl = document.getElementById('metric-total-trades');
+           if (totalTradesEl) totalTradesEl.innerText = currentModel.stats.totalTrades;
+           
+           const feesEl = document.getElementById('metric-fees');
+           if (feesEl) feesEl.innerText = formatUsd(currentModel.stats.totalFeesUsd);
+           
+           // Avg Hold Duration
+           const avgHoldEl = document.getElementById('metric-avg-hold');
+           if (avgHoldEl) avgHoldEl.innerText = `${parseFloat(currentModel.stats.averageHoldTimeSec).toFixed(2)}s`;
+         }
 
       // 3. Update Active Positions
       const posBody = document.getElementById('positions-body');
@@ -1375,7 +1475,10 @@
           aiContainer.appendChild(card);
         });
       }
+    } catch (err) {
+      console.error('Failed to update dashboard UI:', err);
     }
-  </script>
+  }
+</script>
 </body>
 </html>

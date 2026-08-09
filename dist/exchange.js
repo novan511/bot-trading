@@ -120,7 +120,7 @@ export class ExchangeConnector {
             intervalMs = 7 * 24 * 60 * 60 * 1000;
         else if (interval === '1M')
             intervalMs = 30 * 24 * 60 * 60 * 1000;
-        const startTime = now - (limit * 2) * intervalMs;
+        const startTime = now - (limit + 10) * intervalMs;
         try {
             const response = await fetch(url, {
                 method: 'POST',

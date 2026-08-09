@@ -5,6 +5,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { CONFIG } from './config.js';
 import { IExchangeConnector } from './exchange.interface.js';
 import { AITradeAnalyzer } from './ai_trade_analyzer.js';
+import { TradeAnalyzer } from './trade_analyzer.js';
 
 export class WebDashboardServer {
   private server: http.Server;
@@ -14,6 +15,9 @@ export class WebDashboardServer {
   private lastUpdateData: any = null;
   private onManualCloseCallback: ((modelId: string, symbol: string) => void) | null = null;
   private onToggleStatusCallback: (() => void) | null = null;
+  private onStrategyParamCallback: ((symbol: string, key: string, value: number) => void) | null = null;
+  private onTpSlUpdateCallback: ((symbol: string, lineType: string, newPrice: number) => void) | null = null;
+  private onApplySuggestionsCallback: ((suggestions: any[]) => void) | null = null;
   private exchange: IExchangeConnector;
   private performanceDataProvider: (() => Record<string, any>) | null = null;
 
@@ -49,6 +53,34 @@ export class WebDashboardServer {
         return;
       }
 
+      if (req.method === 'GET' && url === '/api/dashboard') {
+        const data = this.lastUpdateData || { models: {}, isTradingActive: false, simMode: true, globalDominance: {} };
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(data));
+        return;
+      }
+
+      if (req.method === 'GET' && url === '/api/suggestions') {
+        const data = this.performanceDataProvider ? this.performanceDataProvider() : { runners: {} };
+        const runners = data.runners || {};
+        const allTrades: any[] = [];
+        for (const runner of Object.values(runners)) {
+          try {
+            const execution = (runner as any).execution;
+            if (execution && execution.getTradesHistory) {
+              allTrades.push(...execution.getTradesHistory());
+            }
+          } catch {}
+        }
+        const analyzer = new TradeAnalyzer();
+        const firstRunner = Object.values(runners)[0] as any;
+        const currentParams = firstRunner?.strategy?.getAllParams?.() || {};
+        const suggestions = analyzer.analyzeHistoricalPerformance(allTrades, currentParams);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ suggestions, totalTrades: allTrades.length }));
+        return;
+      }
+
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Not Found');
     });
@@ -79,6 +111,10 @@ export class WebDashboardServer {
           type: 'dashboard_update',
           data: this.lastUpdateData
         }));
+      } else {
+        // Send a lightweight ping so the client knows the connection is alive;
+        // the next broadcastUpdate will carry the full payload.
+        ws.send(JSON.stringify({ type: 'heartbeat' }));
       }
 
       ws.on('message', (message: string) => {
@@ -134,6 +170,70 @@ export class WebDashboardServer {
               type: 'performance_attribution_response',
               modelId: parsed.modelId,
               data: this.lastUpdateData?.models?.[parsed.modelId]?.performanceAttribution || []
+            }));
+          } else if (parsed.type === 'request_dashboard_data') {
+            if (this.lastUpdateData) {
+              ws.send(JSON.stringify({
+                type: 'dashboard_update',
+                data: this.lastUpdateData
+              }));
+            }
+          } else if (parsed.type === 'update_strategy_param' && parsed.symbol && parsed.key && parsed.value !== undefined) {
+            console.log(`\x1b[35m[WEB-UI] Received strategy param update: ${parsed.symbol} ${parsed.key} = ${parsed.value}\x1b[0m`);
+            if (this.onStrategyParamCallback) {
+              if (parsed.key === 'reset') {
+                this.onStrategyParamCallback(parsed.symbol, 'reset', 0);
+              } else {
+                this.onStrategyParamCallback(parsed.symbol, parsed.key, parsed.value);
+              }
+            }
+            ws.send(JSON.stringify({
+              type: 'strategy_param_updated',
+              symbol: parsed.symbol,
+              key: parsed.key,
+              value: parsed.value
+            }));
+          } else if (parsed.type === 'update_tp_sl' && parsed.symbol && parsed.lineType && parsed.newPrice !== undefined) {
+            console.log(`\x1b[35m[WEB-UI] Received TP/SL update: ${parsed.symbol} ${parsed.lineType} = ${parsed.newPrice}\x1b[0m`);
+            if (this.onTpSlUpdateCallback) {
+              this.onTpSlUpdateCallback(parsed.symbol, parsed.lineType, parsed.newPrice);
+            }
+            ws.send(JSON.stringify({
+              type: 'tp_sl_updated',
+              symbol: parsed.symbol,
+              lineType: parsed.lineType,
+              newPrice: parsed.newPrice
+            }));
+          } else if (parsed.type === 'request_suggestions') {
+            if (this.lastUpdateData) {
+              const runners = this.lastUpdateData.models || {};
+              const allTrades: any[] = [];
+              for (const runner of Object.values(runners)) {
+                try {
+                  const execution = (runner as any).execution;
+                  if (execution && execution.getTradesHistory) {
+                    allTrades.push(...execution.getTradesHistory());
+                  }
+                } catch {}
+              }
+              const analyzer = new TradeAnalyzer();
+              const firstRunner = Object.values(runners)[0] as any;
+              const currentParams = firstRunner?.strategy?.getAllParams?.() || {};
+              const suggestions = analyzer.analyzeHistoricalPerformance(allTrades, currentParams);
+              ws.send(JSON.stringify({
+                type: 'suggestions_response',
+                suggestions,
+                totalTrades: allTrades.length
+              }));
+            }
+          } else if (parsed.type === 'apply_suggestions' && parsed.suggestions) {
+            console.log(`\x1b[35m[WEB-UI] Applying suggestions:\x1b[0m`, parsed.suggestions);
+            if (this.onApplySuggestionsCallback) {
+              this.onApplySuggestionsCallback(parsed.suggestions);
+            }
+            ws.send(JSON.stringify({
+              type: 'suggestions_applied',
+              suggestions: parsed.suggestions
             }));
           }
         } catch (err: any) {
@@ -239,6 +339,18 @@ export class WebDashboardServer {
     this.performanceDataProvider = provider;
   }
 
+  public registerTpSlUpdateCallback(callback: (symbol: string, lineType: string, newPrice: number) => void) {
+    this.onTpSlUpdateCallback = callback;
+  }
+
+  public registerApplySuggestionsCallback(callback: (suggestions: any[]) => void) {
+    this.onApplySuggestionsCallback = callback;
+  }
+
+  public registerStrategyParamCallback(callback: (symbol: string, key: string, value: number) => void) {
+    this.onStrategyParamCallback = callback;
+  }
+
   private handlePerformanceApi(req: http.IncomingMessage, res: http.ServerResponse) {
     if (!this.performanceDataProvider) {
       res.writeHead(503, { 'Content-Type': 'application/json' });
@@ -251,7 +363,8 @@ export class WebDashboardServer {
       const data = this.performanceDataProvider();
       if (meta) {
         const models: Record<string, any> = {};
-        for (const [id, runner] of Object.entries(data.runners || {})) {
+        const runners = data.runners || {};
+        for (const [id, runner] of Object.entries(runners)) {
           try {
             const execution = (runner as any).execution;
             const stats = execution && execution.getStats ? execution.getStats() : {};
@@ -260,14 +373,26 @@ export class WebDashboardServer {
             models[id] = { stats: {} };
           }
         }
+        const strategyOverrides: Record<string, any> = {};
+        for (const [id, runner] of Object.entries(runners)) {
+          try {
+            const strategy = (runner as any).strategy;
+            if (strategy && strategy.getAllOverrides) {
+              const allOverrides = strategy.getAllOverrides();
+              const firstSymbol = Object.keys(allOverrides)[0];
+              strategyOverrides[id] = firstSymbol ? allOverrides[firstSymbol] : {};
+            }
+          } catch {}
+        }
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ models }));
+        res.end(JSON.stringify({ models, strategyOverrides }));
         return;
       }
 
       const analyzer = new AITradeAnalyzer();
       const allTrades: any[] = [];
       const runners = data.runners || {};
+      let correlationMatrix = null;
       for (const runner of Object.values(runners)) {
         try {
           const execution = (runner as any).execution;
@@ -279,11 +404,35 @@ export class WebDashboardServer {
       }
       const riskMetrics = null;
       const analysis = analyzer.analyze(allTrades, riskMetrics);
+      
+      const strategyOverrides: Record<string, any> = {};
+      for (const [id, runner] of Object.entries(runners)) {
+        try {
+          const strategy = (runner as any).strategy;
+          if (strategy && strategy.getAllOverrides) {
+            const allOverrides = strategy.getAllOverrides();
+            const firstSymbol = Object.keys(allOverrides)[0];
+            strategyOverrides[id] = firstSymbol ? allOverrides[firstSymbol] : {};
+          }
+        } catch {}
+      }
+
+      const responsePayload = {
+        trades: allTrades,
+        analysis,
+        models: Object.fromEntries(Object.entries(runners).map(([id, r]: [string, any]) => [id, { stats: (r.execution && r.execution.getStats) ? r.execution.getStats() : {} }])),
+        correlationMatrix,
+        strategyOverrides
+      };
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ trades: allTrades, analysis, models: runners }));
+      res.end(JSON.stringify(responsePayload));
     } catch (err: any) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: err.message }));
+      console.error('[PERF API] Error:', err.message);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
     }
   }
 

@@ -90,8 +90,21 @@
       box-shadow:0 10px 40px rgba(0,0,0,0.25);
     }
     .panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
-    .panel-title{font-size:14px;font-weight:700;letter-spacing:0.4px;display:flex;align-items:center;gap:10px}
-    .badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid var(--border);color:var(--text-2)}
+     .panel-title{font-size:14px;font-weight:700;letter-spacing:0.4px;display:flex;align-items:center;gap:10px}
+     .badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid var(--border);color:var(--text-2)}
+
+     .param-card{
+       background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:12px;padding:14px;
+     }
+     .param-label{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:700;color:var(--text-2);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.6px;}
+     .param-value{color:var(--cyan);font-family:'Space Grotesk',sans-serif;font-size:13px;}
+     .param-desc{font-size:11px;color:var(--text-3);margin-top:8px;line-height:1.4;}
+     input[type="range"]{width:100%;accent-color:var(--cyan);cursor:pointer;}
+     .suggestion-card{transition:all .2s;}
+     .suggestion-card:hover{border-color:rgba(255,255,255,0.12);background:rgba(255,255,255,0.03);}
+     .btn-apply-suggestion{transition:all .2s;}
+     .btn-apply-suggestion:hover{filter:brightness(1.2);transform:translateY(-1px);}
+     .btn-apply-suggestion:disabled{opacity:0.6;cursor:not-allowed;transform:none;}
 
     .wrap{overflow-x:auto;min-height:120px}
     table{width:100%;border-collapse:collapse;font-size:13px;font-family:'Space Grotesk',sans-serif}
@@ -233,6 +246,78 @@
 
       <div class="panel">
         <div class="panel-head">
+          <div class="panel-title">Correlation Matrix</div>
+          <div class="badge">Portfolio Risk</div>
+        </div>
+        <div class="wrap">
+          <div id="correlation-container" style="overflow-x:auto;">
+            <div class="empty-state" id="correlation-empty"><div class="empty-icon">📊</div><p>Waiting for correlation data...</p></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title">Strategy Parameters</div>
+          <div class="badge">Live Control</div>
+        </div>
+        <div class="wrap">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;">
+            <div class="param-card">
+              <label class="param-label">Min Confirmations <span id="param-min-conf-val" class="param-value">2</span></label>
+              <input type="range" id="param-min-conf" min="0" max="5" step="1" value="2" style="width:100%;accent-color:var(--cyan);">
+              <p class="param-desc">Minimum signal confirmations required. Lower = more entries, higher = stricter. Default: 2</p>
+            </div>
+            <div class="param-card">
+              <label class="param-label">S/R Threshold % <span id="param-sr-threshold-val" class="param-value">1.0%</span></label>
+              <input type="range" id="param-sr-threshold" min="0.5" max="2.0" step="0.1" value="1.0" style="width:100%;accent-color:var(--cyan);">
+              <p class="param-desc">How close price must be to support/resistance. Higher = more sensitive. Default: 1.0%</p>
+            </div>
+            <div class="param-card">
+              <label class="param-label">OBI Multiplier <span id="param-obi-mult-val" class="param-value">1.0x</span></label>
+              <input type="range" id="param-obi-mult" min="0.5" max="2.0" step="0.1" value="1.0" style="width:100%;accent-color:var(--cyan);">
+              <p class="param-desc">Order book imbalance threshold multiplier. Lower = stricter imbalance required. Default: 1.0x</p>
+            </div>
+            <div class="param-card">
+              <label class="param-label">Z-Score Multiplier <span id="param-zscore-mult-val" class="param-value">1.0x</span></label>
+              <input type="range" id="param-zscore-mult" min="0.5" max="2.0" step="0.1" value="1.0" style="width:100%;accent-color:var(--cyan);">
+              <p class="param-desc">Mean reversion threshold multiplier. Lower = stricter Z-score required. Default: 1.0x</p>
+            </div>
+          </div>
+          <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;">
+            <select id="param-symbol" style="background:rgba(255,255,255,0.03);border:1px solid var(--border-strong);color:var(--text-1);padding:8px 12px;border-radius:8px;font-size:13px;font-family:'Space Grotesk',sans-serif;">
+              <option value="ALL">All Symbols</option>
+              <option value="BTC">BTC</option>
+              <option value="ETH">ETH</option>
+              <option value="SOL">SOL</option>
+              <option value="SUI">SUI</option>
+              <option value="XRP">XRP</option>
+              <option value="HYPE">HYPE</option>
+              <option value="DOGE">DOGE</option>
+              <option value="NEAR">NEAR</option>
+              <option value="FET">FET</option>
+            </select>
+            <button id="btn-apply-params" style="background:linear-gradient(180deg,#0e1830,#0a1224);border:1px solid #00e5ff44;color:#00e5ff;padding:8px 18px;border-radius:8px;font-weight:700;cursor:pointer;font-size:13px;">Apply Parameters</button>
+            <button id="btn-reset-params" style="background:rgba(255,255,255,0.03);border:1px solid var(--border);color:var(--text-2);padding:8px 18px;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;">Reset to Default</button>
+          </div>
+          <div id="param-status" style="margin-top:10px;font-size:12px;color:var(--text-3);"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title">📊 Parameter Suggestions (Based on Historical Trades)</div>
+          <div class="badge" id="suggestions-badge">Analyzing...</div>
+        </div>
+        <div class="wrap">
+          <div id="suggestions-container">
+            <div class="empty-state" id="suggestions-empty"><div class="empty-icon">📊</div><p>Need at least 5 closed trades to generate suggestions.</p></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
           <div class="panel-title">Equity Curve (Realized PnL)</div>
           <div class="badge">Cumulative</div>
         </div>
@@ -339,20 +424,79 @@
       document.getElementById('total-trades').innerText = analysis.totalTrades;
     }
 
-    function renderSymbolTable(symbolBreakdown) {
-      const body = document.getElementById('symbol-body');
-      const empty = document.getElementById('symbol-empty');
-      body.innerHTML = '';
-      if (!symbolBreakdown || symbolBreakdown.length === 0) { empty.style.display = 'flex'; return; }
-      empty.style.display = 'none';
-      symbolBreakdown.forEach(s => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td><span class="sym">${s.symbol}</span></td><td>${s.totalTrades}</td><td>${s.winRate.toFixed(1)}%</td><td style="color:${s.netProfitUsd>=0?'var(--green)':'var(--red)'};font-weight:700">${fmtUsd(s.netProfitUsd)}</td><td>${fmtUsd(s.avgReturnPerTrade)}</td>`;
-        body.appendChild(tr);
-      });
-    }
+     function renderSymbolTable(symbolBreakdown) {
+       const body = document.getElementById('symbol-body');
+       const empty = document.getElementById('symbol-empty');
+       body.innerHTML = '';
+       if (!symbolBreakdown || symbolBreakdown.length === 0) { empty.style.display = 'flex'; return; }
+       empty.style.display = 'none';
+       symbolBreakdown.forEach(s => {
+         const tr = document.createElement('tr');
+         tr.innerHTML = `<td><span class="sym">${s.symbol}</span></td><td>${s.totalTrades}</td><td>${s.winRate.toFixed(1)}%</td><td style="color:${s.netProfitUsd>=0?'var(--green)':'var(--red)'};font-weight:700">${fmtUsd(s.netProfitUsd)}</td><td>${fmtUsd(s.avgReturnPerTrade)}</td>`;
+         body.appendChild(tr);
+       });
+     }
 
-    function renderExtremes(best, worst) {
+     function renderCorrelationMatrix(matrix) {
+       const container = document.getElementById('correlation-container');
+       const empty = document.getElementById('correlation-empty');
+       if (!container || !matrix) return;
+       
+       const symbols = Object.keys(matrix.matrix || {});
+       if (symbols.length === 0) {
+         if (empty) empty.style.display = 'flex';
+         return;
+       }
+       if (empty) empty.style.display = 'none';
+
+       const grid = document.createElement('div');
+       grid.style.display = 'grid';
+       grid.style.gridTemplateColumns = `120px repeat(${symbols.length}, 1fr)`;
+       grid.style.gap = '2px';
+       grid.style.fontSize = '11px';
+
+       const addCell = (text, align='center', color='var(--text-2)') => {
+         const cell = document.createElement('div');
+         cell.textContent = text;
+         cell.style.padding = '6px 4px';
+         cell.style.textAlign = align;
+         cell.style.color = color;
+         cell.style.fontWeight = '600';
+         if (align === 'right') cell.style.fontFamily = 'Space Grotesk, monospace';
+         return cell;
+       };
+
+       const header = document.createElement('div');
+       header.textContent = '';
+       grid.appendChild(header);
+       symbols.forEach(s => grid.appendChild(addCell(s, 'center', 'var(--text-1)')));
+
+       symbols.forEach(rowSym => {
+         grid.appendChild(addCell(rowSym, 'right', 'var(--text-1)'));
+         symbols.forEach(colSym => {
+           const val = matrix.matrix[rowSym]?.[colSym] ?? 0;
+           const intensity = Math.abs(val);
+           const bg = val > 0 
+             ? `rgba(0, 255, 157, ${intensity * 0.6})` 
+             : `rgba(255, 59, 92, ${intensity * 0.6})`;
+           const cell = document.createElement('div');
+           cell.textContent = val.toFixed(2);
+           cell.style.padding = '6px 4px';
+           cell.style.textAlign = 'center';
+           cell.style.background = bg;
+           cell.style.borderRadius = '3px';
+           cell.style.color = intensity > 0.5 ? '#fff' : 'var(--text-2)';
+           cell.style.fontWeight = '700';
+           cell.style.fontFamily = 'Space Grotesk, monospace';
+           grid.appendChild(cell);
+         });
+       });
+
+       container.innerHTML = '';
+       container.appendChild(grid);
+     }
+
+     function renderExtremes(best, worst) {
       const body = document.getElementById('extremes-body');
       const empty = document.getElementById('extremes-empty');
       body.innerHTML = '';
@@ -494,6 +638,7 @@
       renderAI(analysis.aiInsights);
       if (perf.trades && perf.trades.length > 0) renderEquity(perf.trades);
       if (analysis.hourlyBreakdown && analysis.symbolBreakdown) renderCharts(analysis);
+      if (perf.correlationMatrix) renderCorrelationMatrix(perf.correlationMatrix);
     }
 
     function selectModel(modelId) {
@@ -517,9 +662,183 @@
           modelConfigs[id] = { label: id, color: '#00e5ff' };
         });
       }
+      
+      // Load strategy overrides
+      if (perf.strategyOverrides && perf.strategyOverrides['Llama_8B']) {
+        const overrides = perf.strategyOverrides['Llama_8B'];
+        if (overrides.minConfirmations !== undefined) paramMinConf.value = overrides.minConfirmations;
+        if (overrides.srThresholdPct !== undefined) paramSrThreshold.value = (overrides.srThresholdPct * 100).toFixed(1);
+        if (overrides.obiMultiplier !== undefined) paramObiMult.value = overrides.obiMultiplier.toFixed(1);
+        if (overrides.zScoreMultiplier !== undefined) paramZscoreMult.value = overrides.zScoreMultiplier.toFixed(1);
+        updateParamLabels();
+      }
     });
 
     refresh();
+
+    // Strategy Parameters Control
+    const paramSymbol = document.getElementById('param-symbol');
+    const paramMinConf = document.getElementById('param-min-conf');
+    const paramSrThreshold = document.getElementById('param-sr-threshold');
+    const paramObiMult = document.getElementById('param-obi-mult');
+    const paramZscoreMult = document.getElementById('param-zscore-mult');
+    const paramStatus = document.getElementById('param-status');
+
+    function updateParamLabels() {
+      document.getElementById('param-min-conf-val').textContent = paramMinConf.value;
+      document.getElementById('param-sr-threshold-val').textContent = parseFloat(paramSrThreshold.value).toFixed(1) + '%';
+      document.getElementById('param-obi-mult-val').textContent = parseFloat(paramObiMult.value).toFixed(1) + 'x';
+      document.getElementById('param-zscore-mult-val').textContent = parseFloat(paramZscoreMult.value).toFixed(1) + 'x';
+    }
+
+    [paramMinConf, paramSrThreshold, paramObiMult, paramZscoreMult].forEach(el => {
+      el.addEventListener('input', updateParamLabels);
+    });
+
+    document.getElementById('btn-apply-params').addEventListener('click', () => {
+      const symbol = paramSymbol.value;
+      const minConf = parseInt(paramMinConf.value);
+      const srThreshold = parseFloat(paramSrThreshold.value) / 100;
+      const obiMult = parseFloat(paramObiMult.value);
+      const zscoreMult = parseFloat(paramZscoreMult.value);
+
+      const params = [
+        { key: 'minConfirmations', value: minConf },
+        { key: 'srThresholdPct', value: srThreshold },
+        { key: 'obiMultiplier', value: obiMult },
+        { key: 'zScoreMultiplier', value: zscoreMult }
+      ];
+
+      let successCount = 0;
+      params.forEach(p => {
+        ws.send(JSON.stringify({
+          type: 'update_strategy_param',
+          symbol: symbol,
+          key: p.key,
+          value: p.value
+        }));
+        successCount++;
+      });
+
+      paramStatus.textContent = `Applied ${successCount} parameter(s) to ${symbol === 'ALL' ? 'all symbols' : symbol}`;
+      paramStatus.style.color = 'var(--green)';
+      setTimeout(() => { paramStatus.textContent = ''; }, 3000);
+    });
+
+    document.getElementById('btn-reset-params').addEventListener('click', () => {
+      const symbol = paramSymbol.value;
+      ws.send(JSON.stringify({
+        type: 'update_strategy_param',
+        symbol: symbol,
+        key: 'reset',
+        value: 0
+      }));
+      paramMinConf.value = 2;
+      paramSrThreshold.value = 1.0;
+      paramObiMult.value = 1.0;
+      paramZscoreMult.value = 1.0;
+      updateParamLabels();
+      paramStatus.textContent = `Reset parameters to default for ${symbol === 'ALL' ? 'all symbols' : symbol}`;
+      paramStatus.style.color = 'var(--gold)';
+      setTimeout(() => { paramStatus.textContent = ''; }, 3000);
+    });
+
+    updateParamLabels();
+
+    // ============================================================
+    // Trade Analysis Suggestions
+    // ============================================================
+    const suggestionsContainer = document.getElementById('suggestions-container');
+    const suggestionsEmpty = document.getElementById('suggestions-empty');
+    const suggestionsBadge = document.getElementById('suggestions-badge');
+
+    function renderSuggestions(suggestions, totalTrades) {
+      if (!suggestionsContainer) return;
+      
+      if (suggestions.length === 0 || totalTrades < 5) {
+        suggestionsContainer.innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><p>Need at least 5 closed trades to generate suggestions.</p></div>';
+        if (suggestionsBadge) suggestionsBadge.textContent = 'Insufficient data';
+        return;
+      }
+
+      if (suggestionsBadge) suggestionsBadge.textContent = `${suggestions.length} suggestions from ${totalTrades} trades`;
+
+      let html = '<div style="display:flex;flex-direction:column;gap:12px;">';
+      suggestions.forEach((s, idx) => {
+        const confidenceColor = s.confidence === 'HIGH' ? 'var(--green)' : s.confidence === 'MEDIUM' ? 'var(--gold)' : 'var(--text-3)';
+        html += `
+          <div class="suggestion-card" style="background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:12px;padding:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+              <div style="font-weight:700;color:var(--text-1);font-size:13px;">${idx + 1}. ${s.parameter}</div>
+              <div style="font-size:11px;font-weight:700;color:${confidenceColor};background:rgba(255,255,255,0.04);padding:3px 8px;border-radius:6px;">${s.confidence}</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+              <div>
+                <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.6px;">Current</div>
+                <div style="font-size:13px;color:var(--text-2);font-family:'Space Grotesk',sans-serif;">${s.currentValue}</div>
+              </div>
+              <div>
+                <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.6px;">Suggested</div>
+                <div style="font-size:13px;color:var(--cyan);font-family:'Space Grotesk',sans-serif;font-weight:700;">${s.suggestedValue}</div>
+              </div>
+            </div>
+            <div style="font-size:12px;color:var(--text-2);margin-bottom:6px;">${s.reason}</div>
+            <div style="font-size:11px;color:var(--text-3);margin-bottom:10px;">Impact: ${s.impact} | Affected trades: ${s.affectedTrades}</div>
+            <button class="btn-apply-suggestion" data-parameter="${s.parameter}" data-value="${s.suggestedValue}" style="background:linear-gradient(180deg,#0e1830,#0a1224);border:1px solid #00e5ff44;color:#00e5ff;padding:6px 14px;border-radius:8px;font-weight:700;cursor:pointer;font-size:12px;width:100%;">Apply This Suggestion</button>
+          </div>
+        `;
+      });
+      html += '</div>';
+      suggestionsContainer.innerHTML = html;
+
+      // Add click handlers for apply buttons
+      document.querySelectorAll('.btn-apply-suggestion').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const parameter = btn.dataset.parameter;
+          const value = parseFloat(btn.dataset.value);
+          if (isNaN(value)) return;
+          
+          btn.textContent = 'Applying...';
+          btn.disabled = true;
+          
+          ws.send(JSON.stringify({
+            type: 'update_strategy_param',
+            symbol: 'ALL',
+            key: parameter,
+            value: value
+          }));
+          
+          setTimeout(() => {
+            btn.textContent = 'Applied ✓';
+            btn.style.borderColor = 'var(--green)';
+            btn.style.color = 'var(--green)';
+          }, 500);
+        });
+      });
+    }
+
+    // Load suggestions on page load
+    fetch('/api/suggestions')
+      .then(r => r.json())
+      .then(data => {
+        renderSuggestions(data.suggestions || [], data.totalTrades || 0);
+      })
+      .catch(err => {
+        console.error('Failed to load suggestions:', err);
+        if (suggestionsContainer) {
+          suggestionsContainer.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p>Failed to load suggestions.</p></div>';
+        }
+      });
+
+    // Listen for suggestion updates via WebSocket
+    ws.addEventListener('message', (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'suggestions_response') {
+          renderSuggestions(msg.suggestions || [], msg.totalTrades || 0);
+        }
+      } catch {}
+    });
   </script>
 </body>
 </html>

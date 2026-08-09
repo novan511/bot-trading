@@ -6,7 +6,8 @@ import { ExecutionEngine } from './execution.js';
 import { WebDashboardServer } from './server.js';
 import { CONFIG } from './config.js';
 import { NvidiaObserver } from './nvidia.js';
-import { calculateFibonacci, calculateFVGs, calculateSRLevels, calculatePOC } from './indicators.js';
+import { calculateFibonacci, calculateFVGs, calculateSRLevels, calculatePOC, calculateATR } from './indicators.js';
+import { PortfolioManager } from './portfolio_manager.js';
 import { TradeMemory } from './trade_memory.js';
 import { TradeDatabase } from './database.js';
 import { circuitBreaker } from './circuit_breaker.js';
@@ -97,6 +98,9 @@ async function main() {
       logDebug(`[DATABASE] Restored ${savedPositions.length} active positions for ${modelId} from SQLite`);
     }
   }
+
+  const activeSymbols = Object.keys(CONFIG.SYMBOLS);
+  const portfolioManager = new PortfolioManager(activeSymbols, 50);
   
   // 2. Start the Premium Real-time HTML Dashboard server — pass exchange for backtesting
   const dashboardServer = new WebDashboardServer(10001, exchange);
@@ -108,6 +112,9 @@ async function main() {
     }
     return { runners, models };
   });
+
+  // Send initial dashboard update so the homepage is not empty on first load
+  setTimeout(() => sendDashboardUpdate(), 500);
 
   // Load system active status from persistent file system_state.json
   let isTradingActive = true;
@@ -125,6 +132,7 @@ async function main() {
 
   // Helper to send real-time states to browser dashboard
   const lastKnownPrices: Record<string, { bid: number; ask: number }> = {};
+  const atrResults: Record<string, { atr: number; atrPct: number }> = {};
 
   const sendDashboardUpdate = () => {
     const payload: Record<string, any> = {};
@@ -179,7 +187,10 @@ async function main() {
         tradingSession: model.execution.riskManager.getTradingSession(),
         dailyDrawdown: model.execution.riskManager.getDailyDrawdownPct(),
         consecutiveLosses: model.execution.riskManager.getConsecutiveLosses(),
-        isPaused: model.execution.riskManager.getIsPaused()
+        isPaused: model.execution.riskManager.getIsPaused(),
+        atrData: atrResults,
+        correlationMatrix: portfolioManager.getLastMatrix(),
+        marketRegime: model.strategy.getMarketRegimeInfo()
       };
     }
 
@@ -205,7 +216,8 @@ async function main() {
       models: payload,
       isTradingActive,
       globalDominance: currentGlobalDominance,
-      simMode: CONFIG.SIMULATION_MODE
+      simMode: CONFIG.SIMULATION_MODE,
+      correlationMatrix: portfolioManager.getLastMatrix()
     });
   };
 
@@ -250,6 +262,95 @@ async function main() {
     sendDashboardUpdate();
   });
 
+  // 2c. Listen to browser strategy parameter updates
+  dashboardServer.registerStrategyParamCallback((symbol, key, value) => {
+    logDebug(`[STRATEGY PARAM] Browser requested update: ${symbol} ${key} = ${value}`);
+    const model = models['Llama_8B'];
+    if (!model) {
+      logDebug(`[STRATEGY PARAM] Failed: Model not found.`);
+      return;
+    }
+
+    const targets = symbol === 'ALL' ? Object.keys(CONFIG.SYMBOLS) : [symbol];
+    
+    if (key === 'reset') {
+      for (const sym of targets) {
+        model.strategy.clearStrategyOverride(sym);
+      }
+      logDebug(`[STRATEGY PARAM] Reset all overrides for ${targets.join(', ')}`);
+    } else {
+      for (const sym of targets) {
+        model.strategy.setStrategyOverride(sym, key, value);
+      }
+      logDebug(`[STRATEGY PARAM] Updated ${targets.join(', ')} ${key} = ${value}`);
+    }
+    
+    // Instantly push update to refresh UI
+    sendDashboardUpdate();
+  });
+
+  // 2d. Listen to browser TP/SL manual updates via drag-and-drop
+  dashboardServer.registerTpSlUpdateCallback((symbol, lineType, newPrice) => {
+    logDebug(`[TP/SL UPDATE] Browser requested update: ${symbol} ${lineType} = ${newPrice}`);
+    const model = models['Llama_8B'];
+    if (!model) {
+      logDebug(`[TP/SL UPDATE] Failed: Model not found.`);
+      return;
+    }
+
+    const updated = model.execution.updatePositionTpSl(symbol, lineType === 'tp' ? newPrice : null, lineType === 'sl' ? newPrice : null);
+    if (updated) {
+      logDebug(`[TP/SL UPDATE] Updated ${symbol} ${lineType} to ${newPrice}`);
+      sendDashboardUpdate();
+    } else {
+      logDebug(`[TP/SL UPDATE] No active position for ${symbol}`);
+    }
+  });
+
+  // 2e. Listen to browser apply suggestions requests
+  dashboardServer.registerApplySuggestionsCallback((suggestions) => {
+    logDebug(`[APPLY SUGGESTIONS] Applying ${suggestions.length} suggestions`);
+    const model = models['Llama_8B'];
+    if (!model) {
+      logDebug(`[APPLY SUGGESTIONS] Failed: Model not found.`);
+      return;
+    }
+
+    for (const suggestion of suggestions) {
+      const param = suggestion.parameter;
+      const value = parseFloat(suggestion.suggestedValue);
+      if (isNaN(value)) continue;
+
+      switch (param) {
+        case 'obiThreshold':
+          model.strategy.updateParams('BTC', { obiThreshold: value, zScoreThreshold: model.strategy.getParams('BTC')?.zScoreThreshold || 0.8, takeProfitPct: model.strategy.getParams('BTC')?.takeProfitPct || 0.015, stopLossPct: model.strategy.getParams('BTC')?.stopLossPct || 0.005 });
+          break;
+        case 'zScoreThreshold':
+          model.strategy.updateParams('BTC', { obiThreshold: model.strategy.getParams('BTC')?.obiThreshold || 0.2, zScoreThreshold: value, takeProfitPct: model.strategy.getParams('BTC')?.takeProfitPct || 0.015, stopLossPct: model.strategy.getParams('BTC')?.stopLossPct || 0.005 });
+          break;
+        case 'tpSlRatio':
+          const [tp, sl] = suggestion.suggestedValue.split('/');
+          if (tp && sl) {
+            const tpVal = parseFloat(tp.split(':')[1]);
+            const slVal = parseFloat(sl.split(':')[1]);
+            if (!isNaN(tpVal) && !isNaN(slVal)) {
+              model.strategy.updateParams('BTC', { obiThreshold: model.strategy.getParams('BTC')?.obiThreshold || 0.2, zScoreThreshold: model.strategy.getParams('BTC')?.zScoreThreshold || 0.8, takeProfitPct: tpVal, stopLossPct: slVal });
+            }
+          }
+          break;
+        case 'minConfirmations':
+          model.strategy.setStrategyOverride('ALL', 'minConfirmations', Math.round(value));
+          break;
+        case 'srThresholdPct':
+          model.strategy.setStrategyOverride('ALL', 'srThresholdPct', value);
+          break;
+      }
+    }
+
+    logDebug(`[APPLY SUGGESTIONS] Applied ${suggestions.length} suggestions successfully`);
+    sendDashboardUpdate();
+  });
+
   let tickCount = 0;
   const symbolTickCounts: Record<string, number> = {};
   
@@ -291,6 +392,10 @@ async function main() {
 
     // Cache the latest bid and ask prices for this symbol
     lastKnownPrices[book.symbol] = { bid: bestBid, ask: bestAsk };
+
+    // Update portfolio manager with latest price
+    const midPrice = (bestBid + bestAsk) / 2;
+    portfolioManager.updatePrice(book.symbol, midPrice);
 
     // Log the first few ticks to confirm ingestion is fully working
     if (tickCount <= 10 || tickCount % 1000 === 0) {
@@ -421,8 +526,18 @@ async function main() {
   const runParameterOptimization = async () => {
     logDebug('Triggering dynamic AI parameter optimization for all active models...');
     const activeSymbols = Object.keys(CONFIG.SYMBOLS);
-    const timeframes = ['5m', '15m', '30m', '1h', '4h'];
+    const timeframes = ['5m', '15m', '30m', '1h', '4h', '1d', '1w', '1M'];
     const candleData: Record<string, Record<string, any[]>> = {};
+    const candleLimits: Record<string, number> = {
+      '5m': 300,
+      '15m': 300,
+      '30m': 300,
+      '1h': 300,
+      '4h': 300,
+      '1d': 200,
+      '1w': 100,
+      '1M': 50
+    };
 
     logDebug('Fetching global market dominance stats from CoinGecko...');
     const dominance = await fetchGlobalMarketDominance();
@@ -439,10 +554,11 @@ async function main() {
       const fetchPromises: Promise<void>[] = [];
       for (const symbol of activeSymbols) {
         for (const tf of timeframes) {
+          const tfLimit = candleLimits[tf] || 100;
           fetchPromises.push(
             circuitBreaker.call(
               'hyperliquid_rest',
-              () => exchange.getCandleSnapshot(symbol, tf, 100),
+              () => exchange.getCandleSnapshot(symbol, tf, tfLimit),
               () => []
             ).then(candles => {
               candleData[symbol][tf] = candles;
@@ -468,13 +584,26 @@ async function main() {
         const fvgs = calculateFVGs(h1Candles);
         const srLevels = calculateSRLevels(h1Candles, 5, 0.012);
         const poc = calculatePOC(h1Candles, 20);
+        const atr = calculateATR(h1Candles, 14);
         
         calculatedIndicators[symbol] = { fibonacci, fvgs, srLevels, poc };
+        if (atr) {
+          atrResults[symbol] = { atr: atr.atr, atrPct: atr.atrPct };
+        }
         
         // Cache calculated indicators inside StrategyManager for each active model
         for (const model of Object.values(models)) {
           model.strategy.setCalculatedIndicators(symbol, calculatedIndicators[symbol]);
         }
+      }
+    }
+
+    // Calculate correlation matrix for portfolio-level risk
+    const correlationMatrix = portfolioManager.calculateCorrelationMatrix();
+    if (correlationMatrix) {
+      portfolioManager['lastMatrix'] = correlationMatrix;
+      if (tickCount % 500 === 0) {
+        logDebug(`[PORTFOLIO] Avg correlation: ${correlationMatrix.avgCorrelation.toFixed(3)} | Highest: ${correlationMatrix.highestCorrelated?.pair} (${correlationMatrix.highestCorrelated?.value.toFixed(3)})`);
       }
     }
 

@@ -277,7 +277,7 @@ export class ExecutionEngine {
     }
 
     // NEW: Dynamic position sizing using RiskManager (Kelly + ATR)
-    const atr = 0; // Will be populated if available from MarketRegime via strategy
+    const atr = signal.atr || 0;
     const quantity = this.riskManager.calculatePositionSize(
       this.stats,
       signal.symbol,
@@ -287,7 +287,10 @@ export class ExecutionEngine {
       signal.confidence
     );
 
-    if (quantity <= 0) return;
+    if (quantity <= 0) {
+      console.log(`\x1b[90m[SIZING SKIP] ${signal.symbol} | ATR: ${atr.toFixed(6)} | Entry: ${entryPrice.toFixed(2)} | SL: ${stopLossPrice.toFixed(2)} | RiskDist: ${Math.abs(entryPrice - stopLossPrice).toFixed(2)} | Qty: ${quantity.toFixed(6)}\x1b[0m`);
+      return;
+    }
 
     console.log(`\x1b[36m[SIGNAL ENTRY] ${signal.symbol} | ${signal.side} at ${this.formatPrice(signal.symbol, entryPrice)} | qty: ${quantity.toFixed(6)} | SL: ${this.formatPrice(signal.symbol, stopLossPrice)} | TP: ${this.formatPrice(signal.symbol, takeProfitPrice)}\x1b[0m`);
     
@@ -568,6 +571,25 @@ export class ExecutionEngine {
       list.push(...positions);
     }
     return list;
+  }
+
+  public updatePositionTpSl(symbol: string, newTp: number | null, newSl: number | null) {
+    const positions = this.activePositions.get(symbol);
+    if (!positions || positions.length === 0) return false;
+    const position = positions[0];
+    let updated = false;
+    if (newTp !== null && !isNaN(newTp) && newTp > 0) {
+      position.takeProfitPrice = newTp;
+      updated = true;
+    }
+    if (newSl !== null && !isNaN(newSl) && newSl > 0) {
+      position.stopLossPrice = newSl;
+      updated = true;
+    }
+    if (updated) {
+      console.log(`\x1b[36m[TP/SL UPDATE] ${symbol} | TP: ${position.takeProfitPrice} | SL: ${position.stopLossPrice}\x1b[0m`);
+    }
+    return updated;
   }
 
   public getTradesHistory() {

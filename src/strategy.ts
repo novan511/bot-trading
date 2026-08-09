@@ -48,6 +48,38 @@ export class StrategyManager {
     this.indicatorsCache[symbol] = indicators;
   }
 
+  // NEW: Manual strategy parameter overrides from Performance Lab
+  private manualOverrides: Record<string, {
+    minConfirmations?: number;
+    srThresholdPct?: number;
+    obiMultiplier?: number;
+    zScoreMultiplier?: number;
+    [key: string]: number | undefined;
+  }> = {};
+
+  public setStrategyOverride(symbol: string, key: string, value: number) {
+    if (!this.manualOverrides[symbol]) {
+      this.manualOverrides[symbol] = {};
+    }
+    this.manualOverrides[symbol][key] = value;
+  }
+
+  public getStrategyOverride(symbol: string, key: string): number | undefined {
+    return this.manualOverrides[symbol]?.[key];
+  }
+
+  public clearStrategyOverride(symbol: string, key?: string) {
+    if (!key) {
+      delete this.manualOverrides[symbol];
+    } else {
+      delete this.manualOverrides[symbol]?.[key];
+    }
+  }
+
+  public getAllOverrides(): Record<string, any> {
+    return this.manualOverrides;
+  }
+
   constructor() {
     // NEW: Initialize advanced modules
     this.marketMicro = new MarketMicrostructure();
@@ -112,6 +144,29 @@ export class StrategyManager {
       };
     }
     return snapshot;
+  }
+
+  public getATR(symbol: string): number {
+    return this.marketRegime.getATR(symbol);
+  }
+
+  public getRegimeMultipliers(symbol: string) {
+    return this.marketRegime.getRegimeMultipliers(symbol);
+  }
+
+  public getMarketRegimeInfo(): Record<string, any> {
+    const info: Record<string, any> = {};
+    for (const symbol of Object.keys(CONFIG.SYMBOLS)) {
+      const debug = this.marketRegime.getRegimeDebugInfo(symbol);
+      if (debug) {
+        info[symbol] = {
+          regime: debug.regime,
+          atrPct: parseFloat(debug.atrPct.toFixed(4)),
+          slope: parseFloat(debug.slope.toFixed(6))
+        };
+      }
+    }
+    return info;
   }
 
   /**
@@ -333,20 +388,13 @@ export class StrategyManager {
     }
 
     // =========================================================================
-    // NEW: Regime-Based Adjustments
+    // NEW: Regime-Based Adjustments + Manual Overrides
     // =========================================================================
-    let adjustedObiThreshold = state.obiThreshold;
-    let adjustedZScoreThreshold = state.zScoreThreshold;
-
-    if (regime === 'HIGH_VOLATILITY') {
-      // Loosen thresholds in high vol (wider range)
-      adjustedObiThreshold *= 1.2;
-      adjustedZScoreThreshold *= 1.3;
-    } else if (regime === 'LOW_VOLATILITY') {
-      // Tighten thresholds in low vol (smaller moves)
-      adjustedObiThreshold *= 0.8;
-      adjustedZScoreThreshold *= 0.7;
-    }
+    const regimeMultipliers = this.marketRegime.getRegimeMultipliers(book.symbol);
+    const obiOverride = this.manualOverrides[book.symbol]?.obiMultiplier ?? 1;
+    const zScoreOverride = this.manualOverrides[book.symbol]?.zScoreMultiplier ?? 1;
+    let adjustedObiThreshold = state.obiThreshold * regimeMultipliers.obiMultiplier * obiOverride;
+    let adjustedZScoreThreshold = state.zScoreThreshold * regimeMultipliers.zScoreMultiplier * zScoreOverride;
 
     // =========================================================================
     // EXECUTION TRIGGERS: Tick Imbalance & Momentum
@@ -378,7 +426,8 @@ export class StrategyManager {
 
     if (isBuyAllowedByAI && isNearSupportLevel && hasLongImbalance && hasLongMicroPriceDivergence && isOversold && hasUpwardMomentum) {
       // NEW: Require minimum confirmations
-      if (longConfirmations < 2) return null;
+      const minConf = this.manualOverrides[book.symbol]?.minConfirmations ?? 1;
+      if (longConfirmations < minConf) return null;
 
       if (this.macroTrends['BTC'] === 'BEARISH') {
         return null;
@@ -426,7 +475,8 @@ export class StrategyManager {
     if (isInValueArea) shortConfirmations++;
 
     if (isSellAllowedByAI && isNearResistanceLevel && hasShortImbalance && hasShortMicroPriceDivergence && isOverbought && hasDownwardMomentum) {
-      if (longConfirmations < 2) return null;
+      const minConf = this.manualOverrides[book.symbol]?.minConfirmations ?? 1;
+      if (shortConfirmations < minConf) return null;
 
       if (this.macroTrends['BTC'] === 'BULLISH') {
         return null;

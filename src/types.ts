@@ -38,6 +38,7 @@ export interface TradeSignal {
   price: number;
   reason: string;
   confidence: 'HIGH' | 'LOW';
+  atr?: number;
 }
 
 export interface PartialTPLevel {

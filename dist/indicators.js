@@ -1,4 +1,29 @@
 /**
+ * Calculates Average True Range (ATR) using Wilder's smoothing.
+ */
+export function calculateATR(candles, period = 14) {
+    if (!candles || candles.length < period + 1)
+        return null;
+    const trs = [];
+    for (let i = 1; i < candles.length; i++) {
+        const prevClose = candles[i - 1].close;
+        const high = candles[i].high;
+        const low = candles[i].low;
+        const tr = Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
+        trs.push(tr);
+    }
+    let atr = trs.slice(0, period).reduce((a, b) => a + b, 0) / period;
+    const smoothed = [atr];
+    for (let i = period; i < trs.length; i++) {
+        atr = (atr * (period - 1) + trs[i]) / period;
+        smoothed.push(atr);
+    }
+    const latestCandle = candles[candles.length - 1];
+    const price = latestCandle.close;
+    const atrPct = price > 0 ? atr / price : 0;
+    return { atr, atrPct, smoothed: smoothed[smoothed.length - 1] };
+}
+/**
  * Calculates Fibonacci Retracement levels from the absolute high and low of recent candles.
  */
 export function calculateFibonacci(candles) {
