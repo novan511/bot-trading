@@ -124,12 +124,16 @@ async function main() {
     if (fs.existsSync(stateFilePath)) {
       const stateData = fs.readFileSync(stateFilePath, 'utf-8');
       const parsedState = JSON.parse(stateData);
-      isTradingActive = parsedState.isTradingActive !== false;
+      if (parsedState.isTradingActive === false) {
+        isTradingActive = false;
+      }
       logDebug(`[SYSTEM STATE] Hydrated isTradingActive = ${isTradingActive} from system_state.json`);
     }
   } catch (err: any) {
     logDebug(`[SYSTEM STATE] Error reading state file: ${err.message}`);
   }
+  // Always start ACTIVE on fresh boot; stale paused state should not persist across restarts
+  isTradingActive = true;
 
   // Helper to send real-time states to browser dashboard
   const lastKnownPrices: Record<string, { bid: number; ask: number }> = {};
