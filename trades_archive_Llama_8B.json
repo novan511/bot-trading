@@ -712,5 +712,39 @@
     "result": "WIN",
     "entryReason": "FibSupport(0.4%) FibResistance(0.4%) | OBI(0.97) > 0.22 & Z(-0.95) < -0.85 | Regime: TRENDING_BEAR",
     "modelId": "Llama_8B"
+  },
+  {
+    "id": "hl-YT9GO2T83",
+    "symbol": "BTC",
+    "side": "BUY",
+    "entryPrice": 77012,
+    "exitPrice": 77080,
+    "quantity": 0.064925,
+    "entryTime": 1787411946173,
+    "exitTime": 1787413421969,
+    "holdTimeSec": 1475.796,
+    "grossProfitUsd": 4.414899999999999,
+    "feesUsd": 1.00044231,
+    "netProfitUsd": 3.4144576899999994,
+    "result": "WIN",
+    "entryReason": "SwingSupport(2) | OBI(0.43) > 0.18 & Z(-0.82) < -0.68 | Regime: TRENDING_BEAR",
+    "modelId": "Llama_8B"
+  },
+  {
+    "id": "hl-ZDB5IVKY1",
+    "symbol": "ETH",
+    "side": "BUY",
+    "entryPrice": 2408,
+    "exitPrice": 2411.5,
+    "quantity": 1.730343,
+    "entryTime": 1787412208122,
+    "exitTime": 1787413423311,
+    "holdTimeSec": 1215.189,
+    "grossProfitUsd": 6.0562005,
+    "feesUsd": 0.8339388088499999,
+    "netProfitUsd": 5.22226169115,
+    "result": "WIN",
+    "entryReason": "FibResistance(0.9%) SwingSupport(1) | OBI(0.88) > 0.18 & Z(-0.74) < -0.64 | Regime: TRENDING_BEAR",
+    "modelId": "Llama_8B"
   }
 ]

@@ -80,8 +80,9 @@ async function main() {
     }
     const activeSymbols = Object.keys(CONFIG.SYMBOLS);
     const portfolioManager = new PortfolioManager(activeSymbols, 50);
+    const PORT = parseInt(process.env.PORT || '3000');
     // 2. Start the Premium Real-time HTML Dashboard server — pass exchange for backtesting
-    const dashboardServer = new WebDashboardServer(10001, exchange);
+    const dashboardServer = new WebDashboardServer(PORT, exchange);
     dashboardServer.registerPerformanceDataProvider(() => {
         const runners = {};
         for (const [modelId, model] of Object.entries(models)) {
@@ -98,13 +99,17 @@ async function main() {
         if (fs.existsSync(stateFilePath)) {
             const stateData = fs.readFileSync(stateFilePath, 'utf-8');
             const parsedState = JSON.parse(stateData);
-            isTradingActive = parsedState.isTradingActive !== false;
+            if (parsedState.isTradingActive === false) {
+                isTradingActive = false;
+            }
             logDebug(`[SYSTEM STATE] Hydrated isTradingActive = ${isTradingActive} from system_state.json`);
         }
     }
     catch (err) {
         logDebug(`[SYSTEM STATE] Error reading state file: ${err.message}`);
     }
+    // Always start ACTIVE on fresh boot; stale paused state should not persist across restarts
+    isTradingActive = true;
     // Helper to send real-time states to browser dashboard
     const lastKnownPrices = {};
     const atrResults = {};
@@ -437,8 +442,8 @@ async function main() {
         }
         console.log('\x1b[35m================================================================================\x1b[0m');
         console.log(`\x1b[90m Active Markets Ingesting: [${Object.keys(symbolTickCounts).join(', ')}]\x1b[0m`);
-        console.log(`\x1b[90m Web Dashboard  : http://localhost:10001/\x1b[0m`);
-        console.log(`\x1b[90m Backtest Engine: http://localhost:10001/backtest\x1b[0m`);
+        console.log(`\x1b[90m Web Dashboard  : http://localhost:${PORT}/\x1b[0m`);
+        console.log(`\x1b[90m Backtest Engine: http://localhost:${PORT}/backtest\x1b[0m`);
         console.log(`\x1b[90m Diagnostic log : ${logFilePath}\x1b[0m`);
         // NEW: Show top performing coins
         const firstModel = Object.values(models)[0];

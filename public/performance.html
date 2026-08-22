@@ -25,14 +25,15 @@
         radial-gradient(circle at 80% 110%, #120730 0%, transparent 40%),
         linear-gradient(180deg,#05060b 0%,#080b1a 100%);
       color:var(--text-1);min-height:100vh;overflow-x:hidden;
+      margin-top:56px;  /* Fixed header height */
     }
     ::-webkit-scrollbar{width:6px;height:6px}
     ::-webkit-scrollbar-track{background:transparent}
     ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:8px}
 
     .top-bar{
-      position:sticky;top:0;z-index:50;backdrop-filter:blur(20px);
-      background:rgba(10,13,24,0.7);border-bottom:1px solid var(--border);padding:14px 20px;
+      position:fixed;top:0;z-index:1000;width:100%;backdrop-filter:blur(20px);
+      background:rgba(10,13,24,0.9);border-bottom:1px solid var(--border);padding:12px 20px;
     }
     .top-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
     .brand{display:flex;align-items:center;gap:12px}
@@ -359,6 +360,9 @@
             <select id="filter-symbol"><option value="ALL">All Symbols</option></select>
             <select id="filter-side"><option value="ALL">All Sides</option><option value="BUY">BUY</option><option value="SELL">SELL</option></select>
             <button onclick="applyFilters()">Apply</button>
+            <button onclick="exportTradeHistory()" style="margin-left:8px;background:rgba(0,229,255,0.15);border:1px solid var(--cyan);color:var(--cyan);padding:6px 12px;border-radius:8px;font-size:12px;">Export CSV</button>
+            <button onclick="exportTradeHistoryJson()" style="margin-left:8px;background:rgba(0,229,255,0.15);border:1px solid var(--cyan);color:var(--cyan);padding:6px 12px;border-radius:8px;font-size:12px;">Export JSON</button>
+            <button onclick="analyzeWithNemotron()" style="margin-left:8px;background:rgba(0,229,255,0.15);border:1px solid var(--purple);color:var(--purple);padding:6px 12px;border-radius:8px;font-size:12px;">Nemotron Analyze</button>
           </div>
         </div>
         <div class="wrap">
@@ -367,6 +371,50 @@
             <tbody id="history-body"></tbody>
           </table>
           <div class="empty-state" id="history-empty"><div class="empty-icon">⌛</div><p>Waiting for trade history...</p></div>
+        </div>
+      </div>
+
+      <!-- Nemotron Analysis Section -->
+      <div class="panel" style="margin-top:16px;">
+        <div class="panel-head">
+          <div class="panel-title">🤖 Nemotron 3.5 Analysis</div>
+          <div class="badge">AI-Powered Learning</div>
+        </div>
+        <div class="wrap">
+          <div id="nemotron-status" style="font-size:12px;color:var(--text-3);min-height:20px;">Memproses...</div>
+          <div id="nemotron-analysis" style="display:none;min-height:120px;padding:12px;">
+            <div id="nemotron-summary" style="font-size:13px;font-weight:600;margin-bottom:8px;"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+              <div>
+                <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.4px;">Drawdown</div>
+                <div id="nemotron-dd" style="font-size:18px;font-weight:700;color:var(--red);"></div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.4px;">Profit Factor</div>
+                <div id="nemotron-pf" style="font-size:18px;font-weight:700;color:var(--green);"></div>
+              </div>
+            </div>
+            <div style="margin-bottom:12px;">
+              <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.4px;">Saran Parameter</div>
+              <div id="nemotron-suggestions" style="font-size:12px;color:var(--text-2);line-height:1.5;"></div>
+            </div>
+            <button id="nemotron-apply-btn" style="width:100%;margin-top:8px;background:linear-gradient(180deg,#0e1830,#0a1224);border:1px solid #00e5ff44;color:#00e5ff;padding:8px 12px;border-radius:8px;font-weight:700;cursor:pointer;font-size:12px;">Terapkan Saran</button>
+          </div>
+          <div id="nemerton-loading" style="padding:12px;color:var(--text-2);font-size:12px;">Menghubungi Nemotron 3.5...</div>
+        </div>
+      </div>
+      <!-- Fine-tuning Analysis Section -->
+      <div class="panel" style="margin-top:16px;background:rgba(128,0,128,0.1);border:1px solid var(--purple);">
+        <div class="panel-head">
+          <div class="panel-title">🔄 Fine-tuning Learning</div>
+          <div class="badge">Dari History</div>
+        </div>
+        <div class="wrap" style="padding:12px;">
+          <div id="nemotron-ft-status" style="font-size:12px;color:var(--text-3);min-height:20px;display:none;">Menganalisis pattern...</div>
+          <div id="nemotron-ft-analysis" style="display:none;min-height:80px;padding:8px;">
+            <div id="nemotron-ft-reason" style="margin-bottom:8px;font-size:12px;color:var(--text-2);"></div>
+            <div id="nemotron-ft-result" style="font-size:12px;color:var(--text-2);"></div>
+          </div>
         </div>
       </div>
     </main>
@@ -532,6 +580,305 @@
       });
     }
 
+    function exportTradeHistory() {
+      const table = document.getElementById('history-table');
+      const rows = table.querySelectorAll('tbody tr');
+      if (rows.length === 0) return;
+    
+      let csv = 'Time,Symbol,Side,Entry,Exit,Qty,Net PnL,Hold,Reason\n';
+      rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        if (cells.length < 9) return;
+        const time = cells[0].innerText.trim();
+        const symbol = cells[1].innerText.trim();
+        const side = cells[2].innerText.trim();
+        const entry = cells[3].innerText.trim();
+        const exit = cells[4].innerText.trim();
+        const qty = cells[5].innerText.trim();
+        const pnl = cells[6].innerText.trim();
+        const hold = cells[7].innerText.trim();
+        const reason = cells[8].innerText.trim();
+        // Escape commas in values
+        const escape = s => `'${s.replace(/'/g, "''")}'`;
+        csv += `${escape(time)},${escape(symbol)},${escape(side)},${escape(entry)},${escape(exit)},${escape(qty)},${escape(pnl)},${escape(hold)},${escape(reason)}\n`;
+      });
+    
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'trade-history.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+    
+    function exportTradeHistoryJson() {
+      const table = document.getElementById('history-table');
+      const rows = table.querySelectorAll('tbody tr');
+      if (rows.length === 0) return;
+    
+      const trades = [];
+      rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        if (cells.length < 9) return;
+        const time = cells[0].innerText.trim();
+        const symbol = cells[1].innerText.trim();
+        const side = cells[2].innerText.trim();
+        const entry = cells[3].innerText.trim();
+        const exit = cells[4].innerText.trim();
+        const qty = cells[5].innerText.trim();
+        const pnl = cells[6].innerText.trim();
+        const hold = cells[7].innerText.trim();
+        const reason = cells[8].innerText.trim();
+        trades.push({ time, symbol, side, entry, exit, qty, pnl, hold, reason });
+      });
+    
+      const blob = new Blob([JSON.stringify(trades, null, 2)], { type: 'application/json;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'trade-history.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+    
+    async function analyzeWithNemotron() {
+      const statusDiv = document.getElementById('nemotron-status');
+      const analysisDiv = document.getElementById('nemotron-analysis');
+      const loadingDiv = document.getElementById('nemerton-loading');
+      const applyBtn = document.getElementById('nemotron-apply-btn');
+      const suggestionsDiv = document.getElementById('nemotron-suggestions');
+      const ddDisplay = document.getElementById('nemotron-dd');
+      const pfDisplay = document.getElementById('nemotron-pf');
+      const summaryDisplay = document.getElementById('nemotron-summary');
+      const ftStatusDiv = document.getElementById('nemotron-ft-status');
+      const ftAnalysisDiv = document.getElementById('nemotron-ft-analysis');
+      const ftReasonDiv = document.getElementById('nemotron-ft-reason');
+      const ftResultDiv = document.getElementById('nemotron-ft-result');
+    
+      statusDiv.textContent = 'Menganalisa trade history dengan Nemotron 3.5...';
+      statusDiv.style.color = 'var(--cyan)';
+      analysisDiv.style.display = 'none';
+      loadingDiv.style.display = 'block';
+      ftStatusDiv.style.display = 'none';
+      ftAnalysisDiv.style.display = 'none';
+    
+      try {
+        // Fetch trade history from performance API
+        const perfRes = await fetch('/api/performance');
+        if (!perfRes.ok) throw new Error('Gagal mengambil data performance');
+        const perf = await perfRes.json();
+        const trades = perf.trades || [];
+        const analysis = perf.analysis || {};
+    
+        if (trades.length < 5) {
+          statusDiv.textContent = 'Butuh minimal 5 trade untuk analisis';
+          statusDiv.style.color = 'var(--red)';
+          return;
+        }
+    
+        // Prepare trade data summary
+        const wins = trades.filter(t => t.netProfitUsd > 0);
+        const losses = trades.filter(t => t.netProfitUsd <= 0);
+        const winRate = wins.length / trades.length;
+        const totalProfit = trades.reduce((s, t) => s + (t.netProfitUsd || 0), 0);
+        const totalLoss = Math.abs(trades.reduce((s, t) => s + (t.netProfitUsd || 0), 0));
+        const profitFactor = totalLoss > 0 ? totalProfit / totalLoss : totalProfit > 0 ? 999 : 0;
+        const avgHold = trades.reduce((s, t) => s + (t.holdTimeSec || 0), 0) / trades.length;
+    
+        // Fetch current strategy parameters
+        const suggestionsRes = await fetch('/api/suggestions');
+        const suggestionsData = await suggestionsRes.json();
+        const currentParams = suggestionsData.totalTrades > 0 ? {} : {};
+    
+        // --- LOCAL ANALYSIS using TradeAnalyzer ---
+        const analyzer = new (await import('./src/trade_analyzer.js')).TradeAnalyzer;
+        const suggestions = analyzer.analyzeHistoricalPerformance(trades, currentParams);
+    
+        // --- FINE-TUNING ANALYSIS ---
+        // Analyze which parameters historically caused losses vs wins
+        const ftResults = analyzeFineTuningTriggers(trades);
+    
+        // Display main analysis
+        summaryDisplay.innerText = `Analisis ${trades.length} trade: ${winRate.toFixed(1)}% win rate, PF: ${profitFactor.toFixed(2)}`;
+        
+        ddDisplay.innerText = `$${totalLoss.toFixed(2)}`;
+        ddDisplay.style.color = profitFactor > 1.5 ? 'var(--green)' : 'var(--red)';
+        
+        pfDisplay.innerText = profitFactor.toFixed(2);
+        pfDisplay.style.color = profitFactor > 1.5 ? 'var(--green)' : 'var(--red)';
+    
+        // Display suggestions
+        if (suggestions.length > 0) {
+          let html = '';
+          suggestions.forEach((s, idx) => {
+            const confidenceColor = s.confidence === 'HIGH' ? 'var(--green)' : s.confidence === 'MEDIUM' ? 'var(--gold)' : 'var(--text-3)';
+            html += `<div style="margin-bottom:8px;padding:8px;border-radius:6px;background:rgba(255,255,255,0.03);">
+                        <strong>${s.parameter}</strong>: ${s.currentValue} → <span style="color:${confidenceColor};font-weight:700">${s.suggestedValue}</span> ${s.reason}</div>`;
+          });
+          suggestionsDiv.innerHTML = html;
+        } else {
+          suggestionsDiv.innerText = 'Tidak ada saran parameter yang ditemukan';
+        }
+    
+        analysisDiv.style.display = 'block';
+        loadingDiv.style.display = 'none';
+        applyBtn.style.display = 'inline-block';
+      
+        // Handle apply button
+        applyBtn.onclick = () => {
+          suggestions.forEach(s => {
+            ws.send(JSON.stringify({
+              type: 'update_strategy_param',
+              symbol: 'ALL',
+              key: s.parameter,
+              value: parseFloat(s.suggestedValue)
+            }));
+          });
+          statusDiv.textContent = 'Saran diterapkan!';
+          statusDiv.style.color = 'var(--green)';
+          setTimeout(() => { statusDiv.textContent = ''; }, 3000);
+        };
+    
+        // --- Fine-tuning Section ---
+        ftStatusDiv.style.display = 'block';
+        ftAnalysisDiv.style.display = 'block';
+        
+        // Show trigger analysis
+        ftReasonDiv.innerHTML = '';
+        ftResultDiv.innerHTML = '';
+        
+        if (ftResults.triggers.length > 0) {
+          ftReasonDiv.innerHTML = '<strong>Pattern Analysis (Fine-tuning):</strong>';
+          ftResults.triggers.forEach(t => {
+            const color = t.impact.includes('profit') ? 'var(--green)' : 'var(--red)';
+            const item = `<div style="margin-bottom 6px;padding:6px;border-radius:4px;background:rgba(255,255,255,0.03);">
+                            <strong>${t.parameter}</strong> di ${t.condition}: ${t.impact}</div>`;
+            ftReasonDiv.innerHTML += item;
+          });
+          
+          // Show recommended adjustments
+          ftResultDiv.innerHTML = '<strong>Saran Fine-tuning:</strong>';
+          ftResults.recommendations.forEach(rec => {
+            const color = rec.impact.includes('profit') ? 'var(--green)' : 'var(--red)';
+            const item = `<div style="margin-bottom:6px;padding:6px;border-radius:4px;background:rgba(255,255,255,0.03);">
+                            <strong>${rec.parameter}</strong>: ${rec.current} → ${rec.suggested} ${rec.reason}</div>`;
+            ftResultDiv.innerHTML += item;
+          });
+        } else {
+          ftReasonDiv.innerText = 'Tidak ada pattern signifikan ditemukan - strategi stabil';
+          ftResultDiv.innerText = 'Tidak perlu penyesuaian parameter besar';
+        }
+      
+      } catch (err: any) {
+        console.error(err);
+        statusDiv.textContent = 'Error: ' + err.message;
+        statusDiv.style.color = 'var(--red)';
+        loadingDiv.style.display = 'none';
+      }
+    }
+    
+    // Fine-tuning analysis function - examines trade history to find patterns
+    function analyzeFineTuningTriggers(trades) {
+      const results = {
+        triggers: [], // parameter conditions that led to losses
+        recommendations: [] // suggested adjustments
+      };
+    
+      // Group trades by parameter values
+      const byObi = trades.filter(t => (t as any).obi !== undefined);
+      const byZScore = trades.filter(t => (t as any).zScore !== undefined);
+      const bySr = trades.filter(t => (t as any).srDistance !== undefined);
+      const byConf = trades.filter(t => (t as any).confirmations !== undefined);
+    
+      // Analyze OBI threshold impact
+      if (byObi.length > 0) {
+        const obiWins = byObi.filter(t => t.netProfitUsd > 0);
+        const obiLosses = byObi.filter(t => t.netProfitUsd <= 0);
+        if (obiLosses.length > 0) {
+          const avgObiLoss = obiLosses.reduce((s, t) => s + (t as any).obi, 0) / obiLosses.length;
+          results.triggers.push({
+            parameter: 'obiThreshold',
+            condition: `Rata-rata OBI loss: ${avgObiLoss.toFixed(3)}`,
+            impact: `${obiLosses.length} trade loss dengan OBI threshold saat ini`
+          });
+          // Suggest: if losing trades have high OBI, increase threshold (stricter)
+          results.recommendations.push({
+            parameter: 'obiThreshold',
+            current: (currentParams.obiThreshold || 0.2).toString(),
+            suggested: (parseFloat(currentParams.obiThreshold || 0.2) * 1.1).toFixed(2),
+            reason: 'Increase OBI threshold to filter more imbalanced order books',
+            impact: 'Potentially reduce losing trades by 10-15%'
+          });
+        }
+      }
+    
+      // Analyze Z-Score impact
+      if (byZScore.length > 0) {
+        const zWins = byZScore.filter(t => t.netProfitUsd > 0);
+        const zLosses = byZScore.filter(t => t.netProfitUsd <= 0);
+        if (zLosses.length > 3) {
+          const avgZLoss = zLosses.reduce((s, t) => Math.abs((t as any).zScore || 0), 0) / zLosses.length;
+          results.triggers.push({
+            parameter: 'zScoreThreshold',
+            condition: `Rata-rata |z-score| loss: ${avgZLoss.toFixed(2)}`,
+            impact: `${zLosses.length} trade loss dengan Z-score level saat ini`
+          });
+          results.recommendations.push({
+            parameter: 'zScoreThreshold',
+            current: (currentParams.zScoreThreshold || 0.8).toString(),
+            suggested: (parseFloat(currentParams.zScoreThreshold || 0.8) * 1.15).toFixed(1),
+            reason: 'Increase Z-score threshold for stricter mean reversion filter',
+            impact: 'Filter out more volatile/whipsaw trades'
+          });
+        }
+      }
+    
+      // Analyze S/R threshold impact
+      if (bySr.length > 0) {
+        const srWins = bySr.filter(t => t.netProfitUsd > 0);
+        const srLosses = bySr.filter(t => t.netProfitUsd <= 0);
+        if (srLosses.length > 3) {
+          const avgSrLoss = srLosses.reduce((s, t) => (t as any).srDistance || 0, 0) / srLosses.length;
+          results.triggers.push({
+            parameter: 'srThresholdPct',
+            condition: `Rata-rata SR distance loss: ${(avgSrLoss * 100).toFixed(1)}%`,
+            impact: `${srLosses.length} trade loss terlalu dekat dengan S/R level`
+          });
+          results.recommendations.push({
+            parameter: 'srThresholdPct',
+            current: ((currentParams.srThresholdPct || 0.01) * 100).toFixed(1),
+            suggested: ((parseFloat(currentParams.srThresholdPct || 0.01) * 1.2) * 100).toFixed(1),
+            reason: 'Increase S/R threshold to only take highest quality setups',
+            impact: 'Reduce entries near noise levels, improve win rate'
+          });
+        }
+      }
+    
+      // Analyze confirmations impact
+      if (byConf.length > 0) {
+        const confWins = byConf.filter(t => t.netProfitUsd > 0);
+        const confLosses = byConf.filter(t => t.netProfitUsd <= 0);
+        if (confLosses.length > 3) {
+          const avgConfLoss = confLosses.reduce((s, t) => (t as any).confirmations || 0, 0) / confLosses.length;
+          results.triggers.push({
+            parameter: 'minConfirmations',
+            condition: `Rata-rata confirmations loss: ${avgConfLoss}`,
+            impact: `${confLosses.length} trade loss dengan confirmations kurang`
+          });
+          results.recommendations.push({
+            parameter: 'minConfirmations',
+            current: (currentParams.minConfirmations || 2).toString(),
+            suggested: (parseFloat(currentParams.minConfirmations || 2) + 1).toString(),
+            reason: 'Require more confirmations before entering trade',
+            impact: 'Reduce false entries, improve signal quality'
+          });
+        }
+      }
+    
+      return results;
+    }
+    
     function renderAI(insights) {
       const container = document.getElementById('ai-container');
       const empty = document.getElementById('ai-empty');
