@@ -52,7 +52,9 @@ export class WebDashboardServer {
                 res.end(JSON.stringify(data));
                 return;
             }
-            if (req.method === 'GET' && url === '/api/suggestions') {
+            if (req.method === 'GET' && url.startsWith('/api/suggestions')) {
+                const parsedUrl = new URL(url, `http://${req.headers.host}`);
+                const symbolFilter = parsedUrl.searchParams.get('symbol');
                 const data = this.performanceDataProvider ? this.performanceDataProvider() : { runners: {} };
                 const runners = data.runners || {};
                 const allTrades = [];
@@ -65,12 +67,15 @@ export class WebDashboardServer {
                     }
                     catch { }
                 }
+                const filteredTrades = (symbolFilter && symbolFilter !== 'ALL')
+                    ? allTrades.filter(t => t.symbol === symbolFilter.toUpperCase())
+                    : allTrades;
                 const analyzer = new TradeAnalyzer();
                 const firstRunner = Object.values(runners)[0];
                 const currentParams = firstRunner?.strategy?.getAllParams?.() || {};
-                const suggestions = analyzer.analyzeHistoricalPerformance(allTrades, currentParams);
+                const suggestions = analyzer.analyzeHistoricalPerformance(filteredTrades, currentParams);
                 res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ suggestions, totalTrades: allTrades.length }));
+                res.end(JSON.stringify({ suggestions, totalTrades: filteredTrades.length, symbol: symbolFilter || 'ALL' }));
                 return;
             }
             res.writeHead(404, { 'Content-Type': 'text/plain' });

@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Runtime data - JANGAN di-track, datanya unik per server
+*.db
+*.db-shm
+*.db-wal
+trades_archive*.json
+trades_memory_*.json
+system_state.json
+
+# Logs
+*.log
+
+# Environment & secrets
+.env
+
+# OS / editor
+.DS_Store

@@ -274,6 +274,91 @@
     .trade-pnl-loss { color: var(--neon-red); font-weight: 600; }
     .trade-pnl-even { color: var(--neon-gold); }
     .trade-time { color: var(--text-muted); font-size: 11px; }
+
+    /* ===== PAGINATION ===== */
+    .pagination-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    .pagination-info {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .pagination-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .page-btn {
+      padding: 4px 10px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border-light);
+      border-radius: 6px;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-family: 'Outfit', sans-serif;
+      font-size: 12px;
+      transition: 0.2s;
+    }
+    .page-btn:hover:not(:disabled) {
+      background: rgba(0,242,254,0.1);
+      border-color: var(--neon-cyan);
+      color: var(--neon-cyan);
+    }
+    .page-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+    .page-num {
+      padding: 4px 9px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+      cursor: pointer;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border-light);
+      color: var(--text-muted);
+      transition: 0.2s;
+    }
+    .page-num.active {
+      background: rgba(0,242,254,0.12);
+      border-color: var(--neon-cyan);
+      color: var(--neon-cyan);
+      font-weight: 600;
+    }
+    .ft-item {
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      background: rgba(255,255,255,0.02);
+      border-left: 3px solid var(--neon-purple);
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .ft-apply-btn {
+      margin-top: 8px;
+      padding: 5px 14px;
+      background: rgba(160,0,255,0.08);
+      border: 1px solid var(--neon-purple);
+      border-radius: 6px;
+      color: var(--neon-purple);
+      cursor: pointer;
+      font-family: 'Outfit', sans-serif;
+      font-size: 12px;
+      font-weight: 600;
+      transition: 0.2s;
+    }
+    .ft-apply-btn:hover:not(:disabled) {
+      background: rgba(160,0,255,0.18);
+    }
+    .ft-apply-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
   /* ===== MOBILE RESPONSIVE ===== */
   @media (max-width: 900px) {
     .grid { grid-template-columns: 1fr !important; }
@@ -382,6 +467,19 @@
           </tbody>
         </table>
       </div>
+      <div class="pagination-bar" id="trade-pagination" style="display:none;">
+        <span class="pagination-info" id="trade-pagination-info"></span>
+        <div class="pagination-controls">
+          <button class="page-btn" id="tp-prev" onclick="changeTradePage(-1)">&#x2039; Prev</button>
+          <span id="trade-page-numbers" style="display:flex;gap:4px;"></span>
+          <button class="page-btn" id="tp-next" onclick="changeTradePage(1)">Next &#x203A;</button>
+        </div>
+        <select id="trade-per-page" onchange="changeTradePerPage(this.value)" style="background:rgba(255,255,255,0.03);border:1px solid var(--border-light);color:var(--text-muted);padding:4px 8px;border-radius:6px;font-size:11px;font-family:'Outfit',sans-serif;cursor:pointer;">
+          <option value="10">10 / page</option>
+          <option value="25">25 / page</option>
+          <option value="50">50 / page</option>
+        </select>
+      </div>
     </div>
 
     <!-- AI TOP-DOWN MARKET ANALYSIS -->
@@ -397,6 +495,15 @@
       <h3>&#x1F4C8; ATR & Volatility — <span id="atr-symbol">--</span></h3>
       <div id="atr-content">
         <div class="no-data">Waiting for ATR data...</div>
+      </div>
+    </div>
+
+    <!-- FINE-TUNING LEARNING (per coin, belajar dari Trade History coin ini) -->
+    <div class="thinking-section" id="ft-section" style="margin-top: 0px; border: 1px solid rgba(160,0,255,0.25);">
+      <h3 style="color: var(--neon-purple);">&#x1F504; Fine-tuning Learning — <span id="ft-symbol" style="color:var(--neon-cyan);">--</span></h3>
+      <div id="ft-stats" class="info-row" style="border:none;padding:2px 0 10px 0;font-size:12px;color:var(--text-muted);"></div>
+      <div id="ft-content">
+        <div class="no-data">Menganalisis trade history coin ini...</div>
       </div>
     </div>
 
@@ -1169,34 +1276,56 @@
     }
 
     // ============================================================
-    // TRADE HISTORY — fetch from WebSocket dashboard data
+    // TRADE HISTORY — fetch from WebSocket dashboard data (with pagination)
     // ============================================================
+    let allSymbolTrades = [];
+    let tradeCurrentPage = 1;
+    let tradePerPage = 10;
+
     function updateTradeHistory(models) {
-      const tbody = document.getElementById('trade-tbody');
       const symLabel = document.getElementById('trade-history-symbol');
       symLabel.textContent = symbol;
 
-      const allTrades = [];
+      const trades = [];
 
-      // Kumpulin semua trades dari semua model
+      // Kumpulin semua trades dari semua model untuk symbol ini
       for (const [modelId, modelData] of Object.entries(models || {})) {
-        const trades = modelData.tradesHistory || [];
-        for (const t of trades) {
+        for (const t of (modelData.tradesHistory || [])) {
           if (t.symbol === symbol) {
-            allTrades.push({ ...t, modelId });
+            trades.push({ ...t, modelId });
           }
         }
       }
 
-      if (allTrades.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:30px;">No trade history for ${symbol}.</td></tr>`;
+      // Sort descending by entry time
+      trades.sort((a, b) => (b.entryTime || 0) - (a.entryTime || 0));
+
+      const isNewData = JSON.stringify(trades.map(t => t.id)) !== JSON.stringify(allSymbolTrades.map(t => t.id));
+      allSymbolTrades = trades;
+
+      if (allSymbolTrades.length === 0) {
+        document.getElementById('trade-tbody').innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:30px;">No trade history for ${symbol}.</td></tr>`;
+        document.getElementById('trade-pagination').style.display = 'none';
         return;
       }
 
-      // Sort descending by entry time
-      allTrades.sort((a, b) => (b.entryTime || 0) - (a.entryTime || 0));
+      // Clamp current page to valid range when data changes size
+      const totalPages = Math.max(1, Math.ceil(allSymbolTrades.length / tradePerPage));
+      if (tradeCurrentPage > totalPages) tradeCurrentPage = totalPages;
 
-      tbody.innerHTML = allTrades.map(t => {
+      renderTradePage();
+
+      // Update fine-tuning learning dari trade history coin ini
+      if (isNewData) loadFineTuning();
+    }
+
+    function renderTradePage() {
+      const tbody = document.getElementById('trade-tbody');
+      const totalPages = Math.max(1, Math.ceil(allSymbolTrades.length / tradePerPage));
+      const start = (tradeCurrentPage - 1) * tradePerPage;
+      const pageTrades = allSymbolTrades.slice(start, start + tradePerPage);
+
+      tbody.innerHTML = pageTrades.map(t => {
         const time = new Date(t.entryTime).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         const sideClass = t.side === 'BUY' ? 'trade-side-buy' : 'trade-side-sell';
         const sideLabel = t.side === 'BUY' ? 'LONG' : 'SHORT';
@@ -1225,6 +1354,145 @@
           </tr>
         `;
       }).join('');
+
+      renderTradePagination(totalPages);
+    }
+
+    function renderTradePagination(totalPages) {
+      const bar = document.getElementById('trade-pagination');
+      bar.style.display = 'flex';
+
+      const startItem = (tradeCurrentPage - 1) * tradePerPage + 1;
+      const endItem = Math.min(tradeCurrentPage * tradePerPage, allSymbolTrades.length);
+      document.getElementById('trade-pagination-info').textContent =
+        `${startItem}\u2013${endItem} dari ${allSymbolTrades.length} trade`;
+
+      document.getElementById('tp-prev').disabled = tradeCurrentPage <= 1;
+      document.getElementById('tp-next').disabled = tradeCurrentPage >= totalPages;
+
+      const numbersEl = document.getElementById('trade-page-numbers');
+      let pages = [];
+      if (totalPages <= 7) {
+        pages = Array.from({ length: totalPages }, (_, i) => i + 1);
+      } else {
+        pages = [1];
+        if (tradeCurrentPage > 3) pages.push('...');
+        for (let p = Math.max(2, tradeCurrentPage - 1); p <= Math.min(totalPages - 1, tradeCurrentPage + 1); p++) pages.push(p);
+        if (tradeCurrentPage < totalPages - 2) pages.push('...');
+        pages.push(totalPages);
+      }
+      numbersEl.innerHTML = pages.map(p =>
+        p === '...'
+          ? `<span class="page-num" style="cursor:default;border:none;background:none;">...</span>`
+          : `<span class="page-num ${p === tradeCurrentPage ? 'active' : ''}" onclick="gotoTradePage(${p})">${p}</span>`
+      ).join('');
+    }
+
+    function changeTradePage(delta) {
+      const totalPages = Math.max(1, Math.ceil(allSymbolTrades.length / tradePerPage));
+      const next = tradeCurrentPage + delta;
+      if (next < 1 || next > totalPages) return;
+      tradeCurrentPage = next;
+      renderTradePage();
+    }
+
+    function gotoTradePage(p) {
+      tradeCurrentPage = p;
+      renderTradePage();
+    }
+
+    function changeTradePerPage(val) {
+      tradePerPage = parseInt(val) || 10;
+      tradeCurrentPage = 1;
+      renderTradePage();
+    }
+
+    // ============================================================
+    // FINE-TUNING LEARNING — belajar dari Trade History coin ini
+    // ============================================================
+    async function loadFineTuning() {
+      const symbolEl = document.getElementById('ft-symbol');
+      symbolEl.textContent = symbol;
+
+      // Ringkasan statistik coin ini dari trade history
+      const total = allSymbolTrades.length;
+      const wins = allSymbolTrades.filter(t => (t.netProfitUsd || 0) > 0).length;
+      const netPnl = allSymbolTrades.reduce((s, t) => s + (t.netProfitUsd || 0), 0);
+      const wr = total > 0 ? ((wins / total) * 100).toFixed(1) : '0.0';
+
+      const statsEl = document.getElementById('ft-stats');
+      statsEl.innerHTML = `<span>${total} trade</span><span style="color:${wr >= 50 ? 'var(--neon-green)' : 'var(--neon-red)'};">WR ${wr}%</span>` +
+        `<span style="color:${netPnl >= 0 ? 'var(--neon-green)' : 'var(--neon-red)'};">Net ${netPnl >= 0 ? '+' : '-'}$${Math.abs(netPnl).toFixed(2)}</span>`;
+
+      const contentEl = document.getElementById('ft-content');
+
+      if (total === 0) {
+        contentEl.innerHTML = `<div class="no-data">Belum ada trade untuk ${symbol}. Fine-tuning akan aktif setelah ada minimal 5 trade.</div>`;
+        return;
+      }
+      if (total < 5) {
+        contentEl.innerHTML = `<div class="no-data">Butuh minimal 5 trade (${total}/5) untuk analisis fine-tuning ${symbol}.</div>`;
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/suggestions?symbol=${encodeURIComponent(symbol)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const suggestions = data.suggestions || [];
+
+        if (suggestions.length === 0) {
+          contentEl.innerHTML = `<div class="no-data" style="padding:16px;">Tidak ada penyesuaian parameter yang disarankan — strategi ${symbol} sudah optimal berdasarkan ${total} trade terakhir.</div>`;
+          return;
+        }
+
+        let html = '';
+        suggestions.forEach((s, idx) => {
+          const confColor = s.confidence === 'HIGH' ? 'var(--neon-green)' : s.confidence === 'MEDIUM' ? 'var(--neon-gold)' : 'var(--text-muted)';
+          html += `
+            <div class="ft-item">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <strong style="color:var(--text-main);">${idx + 1}. ${s.parameter}</strong>
+                <span style="font-size:10px;font-weight:700;color:${confColor};border:1px solid ${confColor};border-radius:10px;padding:2px 8px;">${s.confidence}</span>
+              </div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:12px;">
+                Current: <span style="color:var(--text-muted);">${s.currentValue}</span> &rarr;
+                Suggested: <strong style="color:var(--neon-cyan);">${s.suggestedValue}</strong>
+              </div>
+              <div style="font-size:12px;color:var(--text-main);margin-top:6px;line-height:1.5;">${s.reason}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${s.impact} | Berdasarkan ${s.affectedTrades} trade</div>
+              <button class="ft-apply-btn" onclick="applyFineTuning('${s.parameter}', '${s.suggestedValue}', this)">Terapkan ke ${symbol}</button>
+            </div>
+          `;
+        });
+        contentEl.innerHTML = html;
+      } catch (err) {
+        console.error('Fine-tuning load error:', err);
+        contentEl.innerHTML = `<div class="no-data">Gagal memuat analisis fine-tuning: ${err.message}</div>`;
+      }
+    }
+
+    function applyFineTuning(parameter, suggestedValue, btn) {
+      const value = parseFloat(suggestedValue);
+      if (isNaN(value)) return;
+
+      btn.textContent = 'Menerapkan...';
+      btn.disabled = true;
+
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'update_strategy_param',
+          symbol: symbol,
+          key: parameter,
+          value: value
+        }));
+      }
+
+      setTimeout(() => {
+        btn.textContent = 'Diterapkan \u2713';
+        btn.style.borderColor = 'var(--neon-green)';
+        btn.style.color = 'var(--neon-green)';
+      }, 500);
     }
 
     // ============================================================
@@ -1361,6 +1629,7 @@
     document.getElementById('trade-history-symbol-loading').textContent = symbol;
     fetchCandles('5m');
     connectWsWithTradeHistory();
+    loadFineTuning();
 
     // Re-fetch candles periodically (every 30s)
     setInterval(() => {
