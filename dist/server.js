@@ -72,10 +72,17 @@ export class WebDashboardServer {
                     : allTrades;
                 const analyzer = new TradeAnalyzer();
                 const firstRunner = Object.values(runners)[0];
-                const currentParams = firstRunner?.strategy?.getAllParams?.() || {};
-                const suggestions = analyzer.analyzeHistoricalPerformance(filteredTrades, currentParams);
+                const strategy = firstRunner?.strategy;
+                // Per-coin analysis compares against that coin's effective running params
+                let analysisParams = strategy?.getAllParams?.() || {};
+                const payload = { totalTrades: filteredTrades.length, symbol: symbolFilter || 'ALL' };
+                if (symbolFilter && symbolFilter !== 'ALL' && strategy?.getSymbolEffectiveParams) {
+                    analysisParams = strategy.getSymbolEffectiveParams(symbolFilter.toUpperCase());
+                    payload.currentParams = analysisParams;
+                }
+                payload.suggestions = analyzer.analyzeHistoricalPerformance(filteredTrades, analysisParams);
                 res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ suggestions, totalTrades: filteredTrades.length, symbol: symbolFilter || 'ALL' }));
+                res.end(JSON.stringify(payload));
                 return;
             }
             res.writeHead(404, { 'Content-Type': 'text/plain' });

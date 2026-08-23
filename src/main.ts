@@ -90,6 +90,11 @@ async function main() {
       execution: new ExecutionEngine(modelId, exchange, tradeMemory, database),
       database
     };
+    // Wire fine-tuned per-symbol TP/SL overrides into the execution engine
+    models[modelId].execution.setParamProvider((sym) => {
+      const p = models[modelId].strategy.getSymbolEffectiveParams(sym);
+      return { takeProfitPct: p.takeProfitPct, stopLossPct: p.stopLossPct };
+    });
     latestAiInsights[modelId] = {};
     
     // Load active positions dari database setelah restart

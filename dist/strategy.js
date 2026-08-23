@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { CONFIG } from './config.js';
 import { MarketMicrostructure } from './market_microstructure.js';
 import { MarketRegimeDetector } from './market_regime.js';
@@ -28,13 +30,16 @@ export class StrategyManager {
     setCalculatedIndicators(symbol, indicators) {
         this.indicatorsCache[symbol] = indicators;
     }
-    // NEW: Manual strategy parameter overrides from Performance Lab
+    // NEW: Manual strategy parameter overrides from Performance Lab / Thinking Hub
+    // Persisted to strategy_overrides.json so fine-tuning survives bot restarts
     manualOverrides = {};
+    overridesFilePath = path.join(process.cwd(), 'strategy_overrides.json');
     setStrategyOverride(symbol, key, value) {
         if (!this.manualOverrides[symbol]) {
             this.manualOverrides[symbol] = {};
         }
         this.manualOverrides[symbol][key] = value;
+        this.persistOverrides();
     }
     getStrategyOverride(symbol, key) {
         return this.manualOverrides[symbol]?.[key];
@@ -46,11 +51,63 @@ export class StrategyManager {
         else {
             delete this.manualOverrides[symbol]?.[key];
         }
+        this.persistOverrides();
     }
     getAllOverrides() {
         return this.manualOverrides;
     }
+    /**
+     * Effective running parameters for one symbol:
+     * base state params combined with active per-symbol overrides.
+     * obi/zScore effective = base x multiplier (matches processTick logic).
+     * Used by dashboard UI and trade analyzer.
+     */
+    getSymbolEffectiveParams(symbol) {
+        const base = this.getParams(symbol) || {};
+        const ov = (this.manualOverrides[symbol] || {});
+        const overriddenKeys = Object.keys(ov).filter(k => ov[k] !== undefined);
+        const obiMultiplier = ov.obiMultiplier ?? 1;
+        const zScoreMultiplier = ov.zScoreMultiplier ?? 1;
+        return {
+            obiThreshold: (base.obiThreshold ?? 0) * obiMultiplier,
+            zScoreThreshold: (base.zScoreThreshold ?? 0) * zScoreMultiplier,
+            takeProfitPct: ov.takeProfitPct ?? base.takeProfitPct,
+            stopLossPct: ov.stopLossPct ?? base.stopLossPct,
+            minConfirmations: ov.minConfirmations ?? 1,
+            obiMultiplier,
+            zScoreMultiplier,
+            srThresholdPct: ov.srThresholdPct ?? null,
+            overriddenKeys
+        };
+    }
+    loadOverrides() {
+        try {
+            if (fs.existsSync(this.overridesFilePath)) {
+                const raw = JSON.parse(fs.readFileSync(this.overridesFilePath, 'utf-8'));
+                if (raw && typeof raw === 'object') {
+                    this.manualOverrides = raw;
+                    const symbols = Object.keys(this.manualOverrides);
+                    if (symbols.length > 0) {
+                        console.log(`\x1b[35m[STRATEGY] Loaded ${symbols.length} symbol override(s) from strategy_overrides.json: ${symbols.join(', ')}\x1b[0m`);
+                    }
+                }
+            }
+        }
+        catch (err) {
+            console.error(`[STRATEGY] Failed to load strategy_overrides.json: ${err.message}`);
+        }
+    }
+    persistOverrides() {
+        try {
+            fs.writeFileSync(this.overridesFilePath, JSON.stringify(this.manualOverrides, null, 2), 'utf-8');
+        }
+        catch (err) {
+            console.error(`[STRATEGY] Failed to save strategy_overrides.json: ${err.message}`);
+        }
+    }
     constructor() {
+        // Load persisted fine-tuning overrides (survives restarts)
+        this.loadOverrides();
         // NEW: Initialize advanced modules
         this.marketMicro = new MarketMicrostructure();
         this.marketRegime = new MarketRegimeDetector();

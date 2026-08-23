@@ -359,6 +359,49 @@
       opacity: 0.5;
       cursor: not-allowed;
     }
+    .ft-params-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .ft-param-card {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border-light);
+      border-radius: 8px;
+      padding: 8px 10px;
+    }
+    .ft-param-card.tuned {
+      border-color: rgba(160,0,255,0.45);
+      background: rgba(160,0,255,0.06);
+    }
+    .ft-param-label {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 4px;
+    }
+    .ft-param-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--neon-cyan);
+      margin-top: 3px;
+    }
+    .ft-param-badge {
+      font-size: 8px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .badge-tuned { background: rgba(160,0,255,0.18); color: var(--neon-purple); }
+    .badge-default { background: rgba(127,130,150,0.12); color: var(--text-muted); }
   /* ===== MOBILE RESPONSIVE ===== */
   @media (max-width: 900px) {
     .grid { grid-template-columns: 1fr !important; }
@@ -502,6 +545,7 @@
     <div class="thinking-section" id="ft-section" style="margin-top: 0px; border: 1px solid rgba(160,0,255,0.25);">
       <h3 style="color: var(--neon-purple);">&#x1F504; Fine-tuning Learning — <span id="ft-symbol" style="color:var(--neon-cyan);">--</span></h3>
       <div id="ft-stats" class="info-row" style="border:none;padding:2px 0 10px 0;font-size:12px;color:var(--text-muted);"></div>
+      <div id="ft-params"></div>
       <div id="ft-content">
         <div class="no-data">Menganalisis trade history coin ini...</div>
       </div>
@@ -1410,6 +1454,9 @@
     // ============================================================
     // FINE-TUNING LEARNING — belajar dari Trade History coin ini
     // ============================================================
+    let lastFtParams = null;
+    let ftLoadTimer = null;
+
     async function loadFineTuning() {
       const symbolEl = document.getElementById('ft-symbol');
       symbolEl.textContent = symbol;
@@ -1439,6 +1486,10 @@
         const res = await fetch(`/api/suggestions?symbol=${encodeURIComponent(symbol)}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
+
+        lastFtParams = data.currentParams || null;
+        renderFtParams(lastFtParams);
+
         const suggestions = data.suggestions || [];
 
         if (suggestions.length === 0) {
@@ -1472,26 +1523,103 @@
       }
     }
 
-    function applyFineTuning(parameter, suggestedValue, btn) {
-      const value = parseFloat(suggestedValue);
-      if (isNaN(value)) return;
+    function renderFtParams(p) {
+      const el = document.getElementById('ft-params');
+      if (!el) return;
+      if (!p) { el.innerHTML = ''; return; }
 
-      btn.textContent = 'Menerapkan...';
-      btn.disabled = true;
+      const tuned = (k) => Array.isArray(p.overriddenKeys) && p.overriddenKeys.includes(k);
+      const badge = (k) => tuned(k)
+        ? '<span class="ft-param-badge badge-tuned">Fine-tuned</span>'
+        : '<span class="ft-param-badge badge-default">Default</span>';
+      const card = (label, value, key, sub) => `
+        <div class="ft-param-card ${tuned(key) ? 'tuned' : ''}">
+          <div class="ft-param-label"><span>${label}</span>${badge(key)}</div>
+          <div class="ft-param-value">${value}</div>
+          ${sub ? `<div style="font-size:9px;color:var(--text-muted);margin-top:2px;">${sub}</div>` : ''}
+        </div>`;
 
+      el.innerHTML = `
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.8px;color:var(--text-muted);margin-bottom:8px;">&#x2699;&#xFE0F; Parameter Aktif ${symbol}</div>
+        <div class="ft-params-grid">
+          ${card('OBI Threshold', p.obiThreshold !== undefined && p.obiThreshold !== null ? Number(p.obiThreshold).toFixed(3) : '--', 'obiMultiplier', 'base entry filter')}
+          ${card('Z-Score Threshold', p.zScoreThreshold !== undefined && p.zScoreThreshold !== null ? Number(p.zScoreThreshold).toFixed(2) : '--', 'zScoreMultiplier', 'mean reversion')}
+          ${card('Min Confirmations', p.minConfirmations ?? '--', 'minConfirmations', 'signal quality gate')}
+          ${card('Take Profit', p.takeProfitPct != null ? (p.takeProfitPct * 100).toFixed(2) + '%' : '--', '__tp')}
+          ${card('Stop Loss', p.stopLossPct != null ? (p.stopLossPct * 100).toFixed(2) + '%' : '--', '__sl')}
+          ${card('OBI Multiplier', p.obiMultiplier != null ? Number(p.obiMultiplier).toFixed(2) + 'x' : '--', 'obiMultiplier', '1.00x = default')}
+          ${card('Z-Score Multiplier', p.zScoreMultiplier != null ? Number(p.zScoreMultiplier).toFixed(2) + 'x' : '--', 'zScoreMultiplier', '1.00x = default')}
+          ${card('S/R Threshold', p.srThresholdPct != null ? (p.srThresholdPct * 100).toFixed(2) + '%' : '--', 'srThresholdPct', 'setup quality')}
+        </div>`;
+    }
+
+    function sendParamUpdate(key, value) {
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
           type: 'update_strategy_param',
           symbol: symbol,
-          key: parameter,
+          key: key,
           value: value
         }));
+        return true;
+      }
+      return false;
+    }
+
+    /**
+     * Maps a suggestion to the override key(s) the engine actually consumes:
+     * - obiThreshold/zScoreThreshold suggestions become obiMultiplier/zScoreMultiplier
+     * - tpSlRatio becomes separate takeProfitPct + stopLossPct overrides
+     */
+    function applyFineTuning(parameter, suggestedValue, btn) {
+      btn.textContent = 'Menerapkan...';
+      btn.disabled = true;
+
+      let ok = true;
+
+      if (parameter === 'tpSlRatio') {
+        const m = String(suggestedValue).match(/TP:([0-9.]+)\/SL:([0-9.]+)/i);
+        if (m) {
+          const tp = parseFloat(m[1]);
+          const sl = parseFloat(m[2]);
+          if (!isNaN(tp)) ok = sendParamUpdate('takeProfitPct', tp) && ok;
+          if (!isNaN(sl)) ok = sendParamUpdate('stopLossPct', sl) && ok;
+        } else {
+          ok = false;
+        }
+      } else if (parameter === 'obiThreshold') {
+        // Engine consumes a multiplier relative to the coin's base OBI threshold
+        const base = lastFtParams ? (lastFtParams.obiMultiplier || 1) : 1;
+        const currentBase = lastFtParams && lastFtParams.obiThreshold ? lastFtParams.obiThreshold / base : null;
+        if (currentBase && !isNaN(parseFloat(suggestedValue))) {
+          ok = sendParamUpdate('obiMultiplier', +(parseFloat(suggestedValue) / currentBase).toFixed(4));
+        } else { ok = false; }
+      } else if (parameter === 'zScoreThreshold') {
+        const base = lastFtParams ? (lastFtParams.zScoreMultiplier || 1) : 1;
+        const currentBase = lastFtParams && lastFtParams.zScoreThreshold ? lastFtParams.zScoreThreshold / base : null;
+        if (currentBase && !isNaN(parseFloat(suggestedValue))) {
+          ok = sendParamUpdate('zScoreMultiplier', +(parseFloat(suggestedValue) / currentBase).toFixed(4));
+        } else { ok = false; }
+      } else {
+        const value = parseFloat(suggestedValue);
+        if (!isNaN(value)) {
+          ok = sendParamUpdate(parameter, value);
+        } else { ok = false; }
       }
 
       setTimeout(() => {
-        btn.textContent = 'Diterapkan \u2713';
-        btn.style.borderColor = 'var(--neon-green)';
-        btn.style.color = 'var(--neon-green)';
+        if (ok) {
+          btn.textContent = 'Diterapkan \u2713';
+          btn.style.borderColor = 'var(--neon-green)';
+          btn.style.color = 'var(--neon-green)';
+          // Refresh tampilan parameter aktif + saran setelah override tersimpan
+          setTimeout(loadFineTuning, 900);
+        } else {
+          btn.textContent = 'Gagal \u2014 coba lagi';
+          btn.style.borderColor = 'var(--neon-red)';
+          btn.style.color = 'var(--neon-red)';
+          btn.disabled = false;
+        }
       }, 500);
     }
 

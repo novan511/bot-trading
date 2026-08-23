@@ -20,6 +20,8 @@ export class ExecutionEngine {
     tradeMemory;
     database = null;
     modelId;
+    // Optional provider for per-symbol fine-tuned TP/SL overrides (wired from StrategyManager)
+    paramProvider = null;
     constructor(modelId, exchange, tradeMemory, database) {
         this.modelId = modelId;
         this.exchange = exchange;
@@ -27,6 +29,22 @@ export class ExecutionEngine {
         this.database = database || null;
         this.riskManager = new RiskManager();
         this.loadTradesArchive();
+    }
+    setParamProvider(provider) {
+        this.paramProvider = provider;
+    }
+    /**
+     * Resolves effective TP/SL for a symbol: fine-tuned override first, static config fallback
+     */
+    getTpSl(symbol) {
+        try {
+            const tuned = this.paramProvider ? this.paramProvider(symbol) : null;
+            if (tuned && tuned.takeProfitPct > 0 && tuned.stopLossPct > 0)
+                return tuned;
+        }
+        catch { }
+        const cfg = Object.values(CONFIG.SYMBOLS).find(s => s.name === symbol);
+        return { takeProfitPct: cfg ? cfg.takeProfitPct : 0.015, stopLossPct: cfg ? cfg.stopLossPct : 0.005 };
     }
     /**
      * Helper to format price dynamically according to each coin's tick size
@@ -51,6 +69,8 @@ export class ExecutionEngine {
         const coinConfig = Object.values(CONFIG.SYMBOLS).find(s => s.name === symbol);
         if (!coinConfig)
             return;
+        // Fine-tuned per-symbol TP/SL (falls back to static config)
+        const { takeProfitPct, stopLossPct } = this.getTpSl(symbol);
         const roundtripFeePct = CONFIG.TAKER_FEE_PCT * 2; // 0.06% roundtrip fee
         // Evaluate each position individually in a shallow copy to prevent concurrent modification issues during close
         for (const position of [...positions]) {
@@ -70,17 +90,17 @@ export class ExecutionEngine {
                     }
                 }
                 // Progressive Trailing Stop Tightening: tighter SL as profit climbs
-                let activeStopLossPct = coinConfig.stopLossPct;
+                let activeStopLossPct = stopLossPct;
                 if (profitPct > 0) {
-                    const profitRatio = profitPct / coinConfig.takeProfitPct;
+                    const profitRatio = profitPct / takeProfitPct;
                     if (profitRatio >= 1.0 || position.isTakeProfitTriggered) {
                         // Runaway profit mode: trails extremely tight behind peak price
-                        activeStopLossPct = coinConfig.stopLossPct * CONFIG.RUNAWAY_TRAILING_SL_MULTIPLIER;
+                        activeStopLossPct = stopLossPct * CONFIG.RUNAWAY_TRAILING_SL_MULTIPLIER;
                     }
                     else {
                         // Smoothly interpolate from original SL to tight runaway SL
-                        const tightSl = coinConfig.stopLossPct * CONFIG.RUNAWAY_TRAILING_SL_MULTIPLIER;
-                        activeStopLossPct = coinConfig.stopLossPct - (coinConfig.stopLossPct - tightSl) * profitRatio;
+                        const tightSl = stopLossPct * CONFIG.RUNAWAY_TRAILING_SL_MULTIPLIER;
+                        activeStopLossPct = stopLossPct - (stopLossPct - tightSl) * profitRatio;
                     }
                 }
                 // Update peak price
@@ -126,15 +146,15 @@ export class ExecutionEngine {
                     }
                 }
                 // Progressive Trailing Stop Tightening: tighter SL as profit drops
-                let activeStopLossPct = coinConfig.stopLossPct;
+                let activeStopLossPct = stopLossPct;
                 if (profitPct > 0) {
-                    const profitRatio = profitPct / coinConfig.takeProfitPct;
+                    const profitRatio = profitPct / takeProfitPct;
                     if (profitRatio >= 1.0 || position.isTakeProfitTriggered) {
-                        activeStopLossPct = coinConfig.stopLossPct * CONFIG.RUNAWAY_TRAILING_SL_MULTIPLIER;
+                        activeStopLossPct = stopLossPct * CONFIG.RUNAWAY_TRAILING_SL_MULTIPLIER;
                     }
                     else {
-                        const tightSl = coinConfig.stopLossPct * CONFIG.RUNAWAY_TRAILING_SL_MULTIPLIER;
-                        activeStopLossPct = coinConfig.stopLossPct - (coinConfig.stopLossPct - tightSl) * profitRatio;
+                        const tightSl = stopLossPct * CONFIG.RUNAWAY_TRAILING_SL_MULTIPLIER;
+                        activeStopLossPct = stopLossPct - (stopLossPct - tightSl) * profitRatio;
                     }
                 }
                 // Update trough price
@@ -234,16 +254,18 @@ export class ExecutionEngine {
             }
         }
         const entryPrice = signal.price;
+        // Fine-tuned per-symbol TP/SL (falls back to static config)
+        const { takeProfitPct, stopLossPct } = this.getTpSl(signal.symbol);
         // Calculate stop & take profit prices
         let stopLossPrice = 0;
         let takeProfitPrice = 0;
         if (signal.side === 'BUY') {
-            stopLossPrice = entryPrice * (1 - coinConfig.stopLossPct);
-            takeProfitPrice = entryPrice * (1 + coinConfig.takeProfitPct);
+            stopLossPrice = entryPrice * (1 - stopLossPct);
+            takeProfitPrice = entryPrice * (1 + takeProfitPct);
         }
         else {
-            stopLossPrice = entryPrice * (1 + coinConfig.stopLossPct);
-            takeProfitPrice = entryPrice * (1 - coinConfig.takeProfitPct);
+            stopLossPrice = entryPrice * (1 + stopLossPct);
+            takeProfitPrice = entryPrice * (1 - takeProfitPct);
         }
         // NEW: Dynamic position sizing using RiskManager (Kelly + ATR)
         const atr = signal.atr || 0;

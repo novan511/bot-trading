@@ -8,6 +8,7 @@ node_modules/
 trades_archive*.json
 trades_memory_*.json
 system_state.json
+strategy_overrides.json
 
 # Logs
 *.log

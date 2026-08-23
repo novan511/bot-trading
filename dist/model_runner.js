@@ -28,6 +28,11 @@ export class ModelRunner {
         this.database = options.database;
         this.strategy = new StrategyManager();
         this.execution = new ExecutionEngine(id, this.exchange, this.tradeMemory, this.database);
+        // Wire fine-tuned per-symbol TP/SL overrides into the execution engine
+        this.execution.setParamProvider((sym) => {
+            const p = this.strategy.getSymbolEffectiveParams(sym);
+            return { takeProfitPct: p.takeProfitPct, stopLossPct: p.stopLossPct };
+        });
         this.loadActivePositions();
     }
     loadActivePositions() {
