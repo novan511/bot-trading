@@ -1,0 +1,1081 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta charset='UTF-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <title>Backtest Engine</title>
+    <style>
+        :root {
+            --bg-dark: #06070b;
+            --panel-bg: rgba(12, 14, 28, 0.6);
+            --border-light: rgba(255, 255, 255, 0.05);
+            --text-main: #f5f6fa;
+            --text-muted: #7f8296;
+            --neon-cyan: #00f2fe;
+            --neon-green: #00ff87;
+            --neon-red: #ff2a5f;
+            --neon-gold: #ffd600;
+            --neon-purple: #a000ff;
+            --neon-orange: #ff7f00;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-dark);
+            background-image: radial-gradient(circle at 50% 0%, #111429 0%, #06070b 70%);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 24px;
+        }
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--panel-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-light);
+            border-radius: 20px;
+            padding: 16px 28px;
+            box-shadow: 0 10px 40px 0 rgba(0, 0, 0, 0.4);
+        }
+        .brand-section {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .logo-glow {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--neon-cyan);
+            box-shadow: 0 0 16px var(--neon-cyan);
+            animation: pulseGlow 2s infinite alternate;
+        }
+        h1 {
+            font-size: 22px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            background: linear-gradient(135deg, #ffffff 0%, #a5a9c2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .wallet-section {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .wallet-card {
+            background: rgba(0, 242, 254, 0.08);
+            border: 1px solid rgba(0, 242, 254, 0.2);
+            border-radius: 10px;
+            padding: 8px 16px;
+            min-width: 160px;
+        }
+        .wallet-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-muted);
+        }
+        .wallet-value {
+            font-size: 16px;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--neon-cyan);
+        }
+        .controls {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+        }
+        .control-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 4px;
+        }
+        .control-input {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-light);
+            border-radius: 6px;
+            color: var(--text-main);
+            padding: 8px 12px;
+            font-size: 14px;
+            min-width: 120px;
+        }
+        .btn {
+            background: rgba(0, 242, 254, 0.1);
+            border: 1px solid rgba(0, 242, 254, 0.2);
+            color: var(--neon-cyan);
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .btn:hover {
+            background: rgba(0, 242, 254, 0.2);
+            border-color: var(--neon-cyan);
+        }
+        .chart-panel {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-light);
+            border-radius: 16px;
+            padding: 16px;
+            backdrop-filter: blur(10px);
+        }
+        .chart-panel h2 {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        #chart-container {
+            width: 100%;
+            height: 500px;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .chart-controls {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+        .tf-btn {
+            padding: 6px 14px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--border-light);
+            border-radius: 6px;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-family: 'Outfit', sans-serif;
+            font-size: 12px;
+            transition: 0.2s;
+        }
+        .tf-btn.active {
+            background: rgba(0, 242, 254, 0.1);
+            border-color: var(--neon-cyan);
+            color: var(--neon-cyan);
+        }
+        .tf-btn:hover { background: rgba(255,255,255,0.06); }
+        .editor-container {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-light);
+            border-radius: 16px;
+            padding: 16px;
+            backdrop-filter: blur(10px);
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .editor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .editor-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+        .editor-btn {
+            background: rgba(255, 42, 95, 0.08);
+            color: #ff5252;
+            border: 1px solid rgba(255, 42, 95, 0.2);
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .editor-btn:hover { background: rgba(255, 42, 95, 0.2); }
+        #editor { flex: 1; min-height: 300px; }
+        .results-container {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-light);
+            border-radius: 16px;
+            padding: 16px;
+            backdrop-filter: blur(10px);
+            overflow-y: auto;
+        }
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .results-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+        .results-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 16px;
+        }
+        .results-tab {
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--border-light);
+            border-radius: 6px;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-family: 'Outfit', sans-serif;
+            font-size: 13px;
+            transition: 0.2s;
+        }
+        .results-tab.active {
+            background: rgba(0, 242, 254, 0.1);
+            border-color: var(--neon-cyan);
+            color: var(--neon-cyan);
+        }
+        .results-tab:hover { background: rgba(255,255,255,0.06); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+        .metric-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 12px;
+            padding: 16px;
+        }
+        .metric-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 8px;
+        }
+        .metric-value {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+        .metric-value.positive { color: var(--neon-cyan); }
+        .metric-value.negative { color: var(--neon-red); }
+        .equity-chart-container { height: 300px; margin-top: 24px; }
+        .trade-table-container { overflow-x: auto; }
+        .trade-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .trade-table th {
+            text-align: left;
+            padding: 8px 10px;
+            color: var(--text-muted);
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 0.5px;
+        }
+        .trade-table td {
+            padding: 7px 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+        }
+        .trade-table tr:hover td { background: rgba(255,255,255,0.02); }
+        .trade-side-long { color: var(--neon-green); font-weight: 600; }
+        .trade-side-short { color: var(--neon-red); font-weight: 600; }
+        .trade-pnl-win { color: var(--neon-green); font-weight: 600; }
+        .trade-pnl-loss { color: var(--neon-red); font-weight: 600; }
+        .trade-pnl-even { color: var(--neon-gold); }
+        .trade-time { color: var(--text-muted); font-size: 11px; }
+        .pagination-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+        .pagination-info { font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+        .pagination-controls { display: flex; align-items: center; gap: 6px; }
+        .page-btn {
+            padding: 4px 10px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--border-light);
+            border-radius: 6px;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-family: 'Outfit', sans-serif;
+            font-size: 12px;
+            transition: 0.2s;
+        }
+        .page-btn:hover:not(:disabled) { background: rgba(0,242,254,0.1); border-color: var(--neon-cyan); color: var(--neon-cyan); }
+        .page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+        .page-num {
+            padding: 4px 9px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            cursor: pointer;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--border-light);
+            color: var(--text-muted);
+            transition: 0.2s;
+        }
+        .page-num.active { background: rgba(0,242,254,0.12); border-color: var(--neon-cyan); color: var(--neon-cyan); font-weight: 600; }
+        .deep-backtest-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            background: rgba(255, 42, 95, 0.1);
+            border: 1px solid rgba(255, 42, 95, 0.3);
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #ff5252;
+        }
+        .deep-backtest-badge::before {
+            content: '';
+            width: 8px; height: 8px; border-radius: 50%;
+            background: #ff2a5f;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .grid { display: grid; grid-template-columns: 1fr 420px; gap: 16px; }
+        @media (max-width: 1024px) {
+            .grid { grid-template-columns: 1fr; }
+            .editor-container, .results-container { height: auto; }
+        }
+        @keyframes pulseGlow {
+            0% { box-shadow: 0 0 8px var(--neon-cyan); }
+            100% { box-shadow: 0 0 20px var(--neon-cyan); }
+        }
+        .no-data {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 1280px) {
+            #chart-container { height: 420px; }
+        }
+        @media (max-width: 768px) {
+            body { padding: 12px; }
+            .container { gap: 14px; }
+            header {
+                flex-direction: column;
+                align-items: stretch;
+                text-align: center;
+                gap: 10px;
+                padding: 14px 16px;
+                border-radius: 14px;
+            }
+            .brand-section { justify-content: center; }
+            .wallet-section { justify-content: center; }
+            .controls { width: 100%; }
+            .control-group { flex: 1; min-width: 140px; }
+            .control-input { width: 100%; min-width: 0; }
+            .btn { width: 100%; padding: 10px 16px; }
+            #chart-container { height: 320px; }
+            .editor-container, .results-container { padding: 12px; border-radius: 12px; }
+            #editor { min-height: 220px; }
+            .results-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+            .results-tabs { flex-wrap: wrap; }
+            .equity-chart-container { height: 220px; margin-top: 16px; }
+            h1 { font-size: 18px; }
+        }
+        @media (max-width: 480px) {
+            body { padding: 8px; }
+            .container { gap: 10px; }
+            header { padding: 12px; }
+            #chart-container { height: 240px; }
+            .tf-btn { padding: 5px 9px; font-size: 11px; }
+            #candle-count { max-width: 130px; font-size: 11px; }
+            .metric-card { padding: 12px 10px; }
+            .metric-value { font-size: 17px; }
+            .trade-table th, .trade-table td { padding: 6px 6px; font-size: 11px; }
+            .pagination-bar { justify-content: center; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="brand-section">
+                <div class="logo-glow"></div>
+                <div>
+                    <h1>BACKTEST ENGINE</h1>
+                    <p style="font-size: 11px; color: var(--text-muted); font-weight: 500; letter-spacing: 0.5px;">Historical Strategy Testing & Indicator Development</p>
+                </div>
+            </div>
+            <div class="wallet-section">
+                <div class="wallet-card">
+                    <div class="wallet-label">Wallet Balance</div>
+                    <div class="wallet-value" id="wallet-balance">$0.00</div>
+                </div>
+            </div>
+        </header>
+
+        <div class="grid">
+            <!-- LEFT: Chart & Controls -->
+            <div style="display:flex;flex-direction:column;gap:16px;">
+                <div class="chart-panel">
+                    <h2>📊 Hyperliquid Chart</h2>
+                    <div id="chart-container"></div>
+                    <div class="chart-controls">
+                        <button class="tf-btn active" data-tf="5m">5m</button>
+                        <button class="tf-btn" data-tf="15m">15m</button>
+                        <button class="tf-btn" data-tf="30m">30m</button>
+                        <button class="tf-btn" data-tf="1h">1h</button>
+                        <button class="tf-btn" data-tf="4h">4h</button>
+                        <button class="tf-btn" data-tf="1d">1D</button>
+                        <button class="tf-btn" data-tf="1w">1W</button>
+                        <button class="tf-btn" data-tf="1M">1M</button>
+                        <select id="candle-count" style="background:rgba(255,255,255,0.03);border:1px solid var(--border-light);color:var(--text-muted);padding:6px 10px;border-radius:6px;font-size:12px;font-family:'Outfit',sans-serif;cursor:pointer;">
+                            <option value="100">100 Candles</option>
+                            <option value="150">150 Candles</option>
+                            <option value="200" selected>200 Candles</option>
+                            <option value="250">250 Candles</option>
+                            <option value="300">300 Candles</option>
+                        </select>
+                        <span style="flex:1"></span>
+                        <span id="chart-status" style="font-size:11px;color:var(--text-muted);align-self:center;">Loading data...</span>
+                    </div>
+                </div>
+
+                <!-- Editor -->
+                <div class="editor-container">
+                    <div class="editor-header">
+                        <div class="editor-title">Indicator Editor (JavaScript)</div>
+                        <button id="clear-editor-btn" class="editor-btn">Clear</button>
+                    </div>
+                    <div id="editor"></div>
+                </div>
+
+                <!-- Results -->
+                <div class="results-container" style="flex:1;">
+                    <div class="results-header">
+                        <div class="results-title">Backtest Results</div>
+                        <div class="deep-backtest-badge" id="deep-backtest-badge" style="display:none;">Deep Backtest Active</div>
+                    </div>
+                    <div class="results-tabs">
+                        <button class="results-tab active" data-tab="overview">Overview</button>
+                        <button class="results-tab" data-tab="trades">List of Trades</button>
+                        <button class="results-tab" data-tab="performance">Performance</button>
+                    </div>
+                    
+                    <div class="tab-content active" id="tab-overview">
+                        <div class="metrics-grid" id="metrics-grid">
+                            <!-- Metrics will be populated here -->
+                        </div>
+                        <div class="equity-chart-container">
+                            <div id="equity-chart-container"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="tab-content" id="tab-trades">
+                        <div class="trade-table-container">
+                            <table class="trade-table" id="trade-table">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Side</th>
+                                        <th>Entry Time</th>
+                                        <th>Entry Price</th>
+                                        <th>Exit Time</th>
+                                        <th>Exit Price</th>
+                                        <th>Qty</th>
+                                        <th>P&L</th>
+                                        <th>Return</th>
+                                        <th>Duration</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="trade-tbody">
+                                    <tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:30px;">Run a backtest to see trades</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="pagination-bar" id="trade-pagination" style="display:none;">
+                            <span class="pagination-info" id="trade-pagination-info"></span>
+                            <div class="pagination-controls">
+                                <button class="page-btn" id="tp-prev" onclick="changeTradePage(-1)">&lsaquo; Prev</button>
+                                <span id="trade-page-numbers" style="display:flex;gap:4px;"></span>
+                                <button class="page-btn" id="tp-next" onclick="changeTradePage(1)">Next &rsaquo;</button>
+                            </div>
+                            <select id="trade-per-page" onchange="changeTradePerPage(this.value)" style="background:rgba(255,255,255,0.03);border:1px solid var(--border-light);color:var(--text-muted);padding:4px 8px;border-radius:6px;font-size:11px;font-family:'Outfit',sans-serif;cursor:pointer;">
+                                <option value="10">10 / page</option>
+                                <option value="25">25 / page</option>
+                                <option value="50">50 / page</option>
+                                <option value="100">100 / page</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="tab-content" id="tab-performance">
+                        <div class="metrics-grid" id="performance-metrics-grid">
+                            <!-- Performance metrics will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT: Settings Panel -->
+            <div class="side-panel" style="display:flex;flex-direction:column;gap:16px;">
+                <div style="background:var(--panel-bg);border:1px solid var(--border-light);border-radius:16px;padding:16px;backdrop-filter:blur(10px);">
+                    <h3 style="font-size:14px;font-weight:500;color:var(--text-muted);margin-bottom:16px;text-transform:uppercase;letter-spacing:1px;">Settings</h3>
+                    <div class="control-group">
+                        <div class="control-label">Symbol</div>
+                        <select id="symbol-select" class="control-input">
+                            <option value="BTC">BTC</option>
+                            <option value="ETH">ETH</option>
+                            <option value="SOL">SOL</option>
+                            <option value="XRP">XRP</option>
+                            <option value="XAU">Gold (XAU)</option>
+                            <option value="XAG">Silver (XAG)</option>
+                        </select>
+                    </div>
+                    <div class="control-group" style="margin-top:12px;">
+                        <div class="control-label">Starting Balance (USDT)</div>
+                        <input type="number" id="starting-balance" class="control-input" value="10000" min="100" max="1000000" step="100" style="width:120px;">
+                    </div>
+                    <div class="control-group" style="margin-top:12px;">
+                        <div class="control-label">Commission (%)</div>
+                        <input type="number" id="commission-pct" class="control-input" value="0.04" min="0" max="1" step="0.01" style="width:80px;">
+                    </div>
+                    <div class="control-group" style="margin-top:12px;">
+                        <div class="control-label">Slippage (ticks)</div>
+                        <input type="number" id="slippage-ticks" class="control-input" value="2" min="0" max="10" step="1" style="width:80px;">
+                    </div>
+                    <div class="control-group" style="margin-top:12px;">
+                        <div class="control-label">Position Size (% equity)</div>
+                        <input type="number" id="position-size-pct" class="control-input" value="10" min="1" max="100" step="1" style="width:80px;">
+                    </div>
+                    <div class="control-group" style="margin-top:12px;">
+                        <div class="control-label">Signal Period (SMA)</div>
+                        <input type="number" id="signal-period" class="control-input" value="20" min="2" max="200" style="width:80px;">
+                    </div>
+                    <div class="control-group" style="margin-top:12px;">
+                        <div class="control-label">Pyramiding (max entries)</div>
+                        <input type="number" id="pyramiding" class="control-input" value="0" min="0" max="10" step="1" style="width:80px;">
+                    </div>
+                    <div class="control-group" style="margin-top:12px;">
+                        <div class="control-label">Date Range</div>
+                        <div style="display:flex;gap:8px;">
+                            <input type="date" id="date-from" class="control-input" style="width:130px;">
+                            <span style="align-self:center;color:var(--text-muted);">to</span>
+                            <input type="date" id="date-to" class="control-input" style="width:130px;">
+                        </div>
+                    </div>
+                    <div class="control-group" style="margin-top:12px;">
+                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-main);">
+                            <input type="checkbox" id="deep-backtest" style="accent-color:var(--neon-cyan);">
+                            Deep Backtest (max data)
+                        </label>
+                    </div>
+                    <button id="load-data-btn" class="btn" style="margin-top:16px;width:100%;">Load Data</button>
+                    <button id="run-backtest-btn" class="btn" style="margin-top:8px;width:100%;background:rgba(0,255,135,0.1);border-color:rgba(0,255,135,0.2);color:var(--neon-green);">Run Backtest</button>
+                </div>
+
+                <div style="background:var(--panel-bg);border:1px solid var(--border-light);border-radius:16px;padding:16px;backdrop-filter:blur(10px);flex:1;">
+                    <h3 style="font-size:14px;font-weight:500;color:var(--text-muted);margin-bottom:16px;text-transform:uppercase;letter-spacing:1px;">How It Works</h3>
+                    <div style="font-size:13px;line-height:1.7;color:var(--text-main);">
+                        <div style="margin-bottom:12px;"><strong>1.</strong> Select symbol, timeframe, and candle count</div>
+                        <div style="margin-bottom:12px;"><strong>2.</strong> Click "Load Data" to fetch from Hyperliquid</div>
+                        <div style="margin-bottom:12px;"><strong>3.</strong> Write indicator function in editor (must return array)</div>
+                        <div style="margin-bottom:12px;"><strong>4.</strong> Click "Run Backtest" to test strategy</div>
+                        <div style="margin-bottom:12px;"><strong>Strategy:</strong> Long when indicator > SMA(indicator), Short when below</div>
+                        <div style="margin-bottom:12px;"><strong>5.</strong> View equity curve and metrics</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load Lightweight Charts from vendor -->
+    <script src="/vendor/lightweight-charts.standalone.production.js"></script>
+    <!-- Load Monaco Editor from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.47.0/min/vs/loader.min.js"></script>
+    <script>
+        // ============================================================
+        // Configuration
+        // ============================================================
+        const HYPERLIQUID_REST = 'https://api.hyperliquid.xyz';
+        let currentSymbol = 'BTC';
+        let currentTimeframe = '5m';
+        let selectedCandleCount = 200;
+        let signalPeriod = 20;
+
+        let chart = null;
+        let candleSeries = null;
+        let indicatorSeries = null;
+        let equityChart = null;
+        let equitySeries = null;
+        let editor = null;
+        let historicalData = []; // Array of { time, open, high, low, close, volume }
+
+        // ============================================================
+        // Chart Setup (Lightweight Charts) - same as thinking-hub
+        // ============================================================
+        function initChart() {
+            const chartContainer = document.getElementById('chart-container');
+            chart = LightweightCharts.createChart(chartContainer, {
+                layout: {
+                    background: { type: 'solid', color: '#06070b' },
+                    textColor: '#7f8296',
+                    fontSize: 11,
+                    fontFamily: 'JetBrains Mono, monospace'
+                },
+                grid: {
+                    vertLines: { color: 'rgba(255,255,255,0.03)' },
+                    horzLines: { color: 'rgba(255,255,255,0.03)' }
+                },
+                crosshair: {
+                    mode: LightweightCharts.CrosshairMode.Normal,
+                    vertLine: { color: '#00f2fe', width: 1, style: LightweightCharts.LineStyle.Dashed },
+                    horzLine: { color: '#00f2fe', width: 1, style: LightweightCharts.LineStyle.Dashed }
+                },
+                timeScale: {
+                    borderColor: 'rgba(255,255,255,0.05)',
+                    timeVisible: true,
+                    secondsVisible: false
+                },
+                rightPriceScale: {
+                    borderColor: 'rgba(255,255,255,0.05)',
+                    scaleMargins: { top: 0.1, bottom: 0.25 }
+                }
+            });
+
+            candleSeries = chart.addCandlestickSeries({
+                upColor: '#00ff87',
+                downColor: '#ff2a5f',
+                borderDownColor: '#ff2a5f',
+                borderUpColor: '#00ff87',
+                wickDownColor: '#ff2a5f',
+                wickUpColor: '#00ff87'
+            });
+
+            // Indicator series (line)
+            indicatorSeries = chart.addLineSeries({
+                color: '#00f2fe',
+                lineWidth: 2,
+                priceLineVisible: false,
+                lastValueVisible: false
+            });
+
+            // Handle resize
+            window.addEventListener('resize', () => {
+                chart.applyOptions({ width: chartContainer.clientWidth });
+            });
+        }
+
+        // ============================================================
+        // Equity Chart
+        // ============================================================
+        function initEquityChart() {
+            const equityContainer = document.getElementById('equity-chart-container');
+            equityChart = LightweightCharts.createChart(equityContainer, {
+                layout: {
+                    background: { type: 'solid', color: '#06070b' },
+                    textColor: '#7f8296',
+                    fontSize: 11,
+                    fontFamily: 'JetBrains Mono, monospace'
+                },
+                grid: {
+                    vertLines: { color: 'rgba(255,255,255,0.03)' },
+                    horzLines: { color: 'rgba(255,255,255,0.03)' }
+                },
+                crosshair: {
+                    mode: LightweightCharts.CrosshairMode.Normal,
+                    vertLine: { color: '#00f2fe', width: 1, style: LightweightCharts.LineStyle.Dashed },
+                    horzLine: { color: '#00f2fe', width: 1, style: LightweightCharts.LineStyle.Dashed }
+                },
+                timeScale: {
+                    borderColor: 'rgba(255,255,255,0.05)',
+                    timeVisible: true,
+                    secondsVisible: false
+                },
+                rightPriceScale: {
+                    borderColor: 'rgba(255,255,255,0.05)',
+                    scaleMargins: { top: 0.1, bottom: 0.25 }
+                }
+            });
+
+            equitySeries = equityChart.addLineSeries({
+                color: '#00ff87',
+                lineWidth: 2,
+                priceLineVisible: false,
+                lastValueVisible: true
+            });
+        }
+
+        // ============================================================
+        // Monaco Editor
+        // ============================================================
+        function initEditor() {
+            require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.47.0/min/vs' }});
+            require(['vs/editor/editor.main'], function () {
+                editor = monaco.editor.create(document.getElementById('editor'), {
+                    language: 'javascript',
+                    theme: 'vs-dark',
+                    automaticLayout: true,
+                    fontSize: 14,
+                    lineNumbers: 'on',
+                    minimap: { enabled: false }
+                });
+                editor.setValue(`// Write your indicator function here
+// It receives arrays: open, high, low, close, volume, timestamp
+// Must return array of values (same length)
+
+function indicator(open, high, low, close, volume, timestamp) {
+    // Example: Simple Moving Average of close prices
+    const period = 14;
+    const result = new Array(open.length);
+    for (let i = 0; i < open.length; i++) {
+        if (i < period - 1) {
+            result[i] = NaN;
+        } else {
+            let sum = 0;
+            for (let j = 0; j < period; j++) {
+                sum += close[i - j];
+            }
+            result[i] = sum / period;
+        }
+    }
+    return result;
+}`);
+            });
+        }
+
+        // ============================================================
+        // Fetch Candles from Hyperliquid REST API (same as thinking-hub)
+        // ============================================================
+        async function fetchCandles() {
+            const statusEl = document.getElementById('chart-status');
+            const candleSelect = document.getElementById('candle-count');
+            if (candleSelect) selectedCandleCount = parseInt(candleSelect.value);
+            
+            const symSelect = document.getElementById('symbol-select');
+            if (symSelect) currentSymbol = symSelect.value;
+            
+            const sigInput = document.getElementById('signal-period');
+            if (sigInput) signalPeriod = parseInt(sigInput.value) || 20;
+            
+            statusEl.textContent = `Loading ${currentSymbol} ${currentTimeframe}...`;
+            
+            try {
+                const now = Date.now();
+                let intervalMs = 5 * 60 * 1000;
+                if (currentTimeframe === '15m') intervalMs = 15 * 60 * 1000;
+                else if (currentTimeframe === '30m') intervalMs = 30 * 60 * 1000;
+                else if (currentTimeframe === '1h') intervalMs = 60 * 60 * 1000;
+                else if (currentTimeframe === '4h') intervalMs = 4 * 60 * 60 * 1000;
+                else if (currentTimeframe === '1d') intervalMs = 24 * 60 * 60 * 1000;
+                else if (currentTimeframe === '1w') intervalMs = 7 * 24 * 60 * 60 * 1000;
+                else if (currentTimeframe === '1M') intervalMs = 30 * 24 * 60 * 60 * 1000;
+                
+                const candleLimit = (currentTimeframe === '1d') ? 200 : (currentTimeframe === '1w') ? 100 : (currentTimeframe === '1M') ? 50 : selectedCandleCount;
+                const startTime = now - (candleLimit + 10) * intervalMs;
+                
+                const url = `${HYPERLIQUID_REST}/info`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'candleSnapshot',
+                        req: { coin: currentSymbol, interval: currentTimeframe, startTime, endTime: now }
+                    })
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+                const data = await response.json();
+                if (!data || !Array.isArray(data) || data.length === 0) {
+                    statusEl.textContent = `No candle data for ${currentSymbol} (${currentTimeframe})`;
+                    return;
+                }
+                
+                // Format candles for lightweight-charts (Hyperliquid returns ms, convert to seconds)
+                const candles = data.map(c => ({
+                    time: Math.floor(c.t / 1000), // Unix seconds
+                    open: parseFloat(c.o),
+                    high: parseFloat(c.h),
+                    low: parseFloat(c.l),
+                    close: parseFloat(c.c)
+                })).filter(c => c.time > 0 && !isNaN(c.open));
+                
+                if (candles.length === 0) {
+                    statusEl.textContent = `Empty candle data for ${currentSymbol} (${currentTimeframe})`;
+                    return;
+                }
+                
+                candleSeries.setData(candles);
+                indicatorSeries.setData([]);
+                historicalData = candles; // Store for backtest
+                
+                statusEl.textContent = `${candles.length} candles ${currentTimeframe} | ${currentSymbol}`;
+            } catch (err) {
+                statusEl.textContent = `Error: ${err.message}`;
+                console.error('Fetch candles error:', err);
+            }
+        }
+
+        // ============================================================
+        // Run Backtest
+        // ============================================================
+        function runBacktest() {
+            if (historicalData.length === 0) {
+                alert('Please load historical data first.');
+                return;
+            }
+            
+            const code = editor.getValue();
+            let indicatorFn;
+            try {
+                eval(code);
+                if (typeof indicator !== 'function') {
+                    throw new Error('Code must define a function named "indicator"');
+                }
+                indicatorFn = indicator;
+            } catch (err) {
+                console.error('Failed to parse indicator code:', err);
+                alert('Invalid indicator code: ' + err.message);
+                return;
+            }
+            
+            // Extract arrays
+            const open = historicalData.map(d => d.open);
+            const high = historicalData.map(d => d.high);
+            const low = historicalData.map(d => d.low);
+            const close = historicalData.map(d => d.close);
+            // volume not available from Hyperliquid candleSnapshot, use zeros
+            const volume = new Array(open.length).fill(0);
+            const timestamp = historicalData.map(d => d.time * 1000); // convert to ms
+            
+            // Compute indicator values
+            let indicatorValues;
+            try {
+                indicatorValues = indicatorFn(open, high, low, close, volume, timestamp);
+                if (!Array.isArray(indicatorValues) || indicatorValues.length !== open.length) {
+                    throw new Error('Indicator function must return an array of the same length as the input arrays');
+                }
+            } catch (err) {
+                console.error('Error executing indicator function:', err);
+                alert('Error in indicator code: ' + err.message);
+                return;
+            }
+            
+            // Update indicator series on chart
+            const indicatorData = historicalData.map((d, i) => ({
+                time: d.time,
+                value: indicatorValues[i]
+            })).filter(d => !isNaN(d.value));
+            indicatorSeries.setData(indicatorData);
+            
+            // Calculate signal line (SMA of indicator)
+            const signal = new Array(indicatorValues.length);
+            for (let i = 0; i < indicatorValues.length; i++) {
+                if (i < signalPeriod - 1) {
+                    signal[i] = NaN;
+                } else {
+                    let sum = 0;
+                    for (let j = 0; j < signalPeriod; j++) {
+                        sum += indicatorValues[i - j];
+                    }
+                    signal[i] = sum / signalPeriod;
+                }
+            }
+            
+            // Generate signals: 1 for long, -1 for short
+            const position = new Array(indicatorValues.length).fill(0);
+            for (let i = 1; i < indicatorValues.length; i++) {
+                if (isNaN(indicatorValues[i]) || isNaN(signal[i])) {
+                    position[i] = position[i-1];
+                } else if (indicatorValues[i] > signal[i]) {
+                    position[i] = 1; // long
+                } else if (indicatorValues[i] < signal[i]) {
+                    position[i] = -1; // short
+                } else {
+                    position[i] = position[i-1];
+                }
+            }
+            
+            // Calculate equity curve
+            const startingBalance = parseFloat(document.getElementById('starting-balance').value) || 10000;
+            let equity = [startingBalance];
+            for (let i = 0; i < close.length - 1; i++) {
+                if (isNaN(position[i])) {
+                    equity.push(equity[equity.length - 1]);
+                } else {
+                    const ret = (close[i+1] - close[i]) / close[i] * position[i];
+                    equity.push(equity[equity.length - 1] * (1 + ret));
+                }
+            }
+            
+            // Update equity chart
+            const equityData = historicalData.map((d, i) => ({
+                time: d.time,
+                value: equity[i]
+            }));
+            equitySeries.setData(equityData);
+            
+            // Calculate and display metrics
+            const startingBalance = parseFloat(document.getElementById('starting-balance').value) || 10000;
+            const totalReturn = ((equity[equity.length - 1] - startingBalance) / startingBalance) * 100;
+            const maxDrawdown = calculateMaxDrawdown(equity);
+            const winRate = calculateWinRate(close, position);
+            const sharpeRatio = calculateSharpeRatio(close, position);
+            
+            // Update wallet balance to show final equity
+            document.getElementById('wallet-balance').textContent = '$' + equity[equity.length - 1].toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            
+            document.getElementById('metrics-grid').innerHTML = `
+                <div class="metric-card">
+                    <div class="metric-label">Total Return</div>
+                    <div class="metric-value ${totalReturn >= 0 ? 'positive' : 'negative'}">${totalReturn.toFixed(2)}%</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Max Drawdown</div>
+                    <div class="metric-value negative">${maxDrawdown.toFixed(2)}%</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Win Rate</div>
+                    <div class="metric-value">${winRate.toFixed(2)}%</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Sharpe Ratio</div>
+                    <div class="metric-value">${sharpeRatio.toFixed(2)}</div>
+                </div>
+            `;
+        }
+        
+        function calculateMaxDrawdown(equity) {
+            let maxDrawdown = 0;
+            let peak = equity[0];
+            for (let i = 0; i < equity.length; i++) {
+                if (equity[i] > peak) peak = equity[i];
+                const drawdown = (peak - equity[i]) / peak;
+                if (drawdown > maxDrawdown) maxDrawdown = drawdown;
+            }
+            return maxDrawdown * 100;
+        }
+        
+        function calculateWinRate(close, position) {
+            let wins = 0, losses = 0;
+            for (let i = 0; i < close.length - 1; i++) {
+                if (isNaN(position[i])) continue;
+                const ret = (close[i+1] - close[i]) / close[i];
+                if (position[i] * ret > 0) wins++;
+                else if (position[i] * ret < 0) losses++;
+            }
+            const total = wins + losses;
+            return total === 0 ? 0 : (wins / total) * 100;
+        }
+        
+        function calculateSharpeRatio(close, position, riskFreeRate = 0) {
+            const returns = [];
+            for (let i = 0; i < close.length - 1; i++) {
+                if (isNaN(position[i])) continue;
+                const ret = (close[i+1] - close[i]) / close[i] * position[i];
+                returns.push(ret);
+            }
+            if (returns.length === 0) return 0;
+            const mean = returns.reduce((sum, r) => sum + r, 0) / returns.length;
+            const variance = returns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (returns.length - 1);
+            const stdDev = Math.sqrt(variance);
+            if (stdDev === 0) return 0;
+            return (mean - riskFreeRate) / stdDev * Math.sqrt(252);
+        }
+        
+        // ============================================================
+        // State for trades
+        // ============================================================
+        let allTrades = [];
+        let tradePage = 1;
+        let tradesPerPage = 25;
+
+        // ============================================================
+        // Event Listeners
+        // ============================================================
+        document.querySelectorAll('.tf-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentTimeframe = btn.dataset.tf;
+                fetchCandles();
+            });
+        });
+        
+        const candleSelect = document.getElementById('candle-count');
+        if (candleSelect) {
+            candleSelect.addEventListener('change', () => {
+                selectedCandleCount = parseInt(candleSelect.value);
+                fetchCandles();
+            });
+        }
+        
+        document.getElementById('load-data-btn').addEventListener('click', fetchCandles);
+        document.getElementById('run-backtest-btn').addEventListener('click', runBacktest);
+        document.getElementById('clear-editor-btn').addEventListener('click', () => {
+            editor.setValue('');
+        });
+        
+        // Symbol change auto-reload
+        document.getElementById('symbol-select').addEventListener('change', (e) => {
+            currentSymbol = e.target.value;
+            fetchCandles();
+        });
+        
+        // Starting balance change
+        document.getElementById('starting-balance').addEventListener('change', (e) => {
+            const balance = parseFloat(e.target.value) || 10000;
+            localStorage.setItem('backtest_wallet_balance', balance.toString());
+            updateWalletBalance();
+        });
+        
+        // Tab switching
+        document.querySelectorAll('.results-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.results-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+            });
+        });
+        
+        // Update wallet balance from localStorage or use default
+        function updateWalletBalance() {
+            // Try to get balance from localStorage (if set by main dashboard)
+            const savedBalance = localStorage.getItem('backtest_wallet_balance');
+            const balance = savedBalance ? parseFloat(savedBalance) : 10000; // Default $10,000
+            document.getElementById('wallet-balance').textContent = '$' + balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            // Also update the input
+            document.getElementById('starting-balance').value = balance;
+        }
+        
+        // Initialize
+        async function init() {
+            await initEditor();
+            initChart();
+            initEquityChart();
+            updateWalletBalance();
+            await fetchCandles();
+        }
+        init();
+    </script>
+</body>
+</html>

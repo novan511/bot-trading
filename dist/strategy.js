@@ -30,6 +30,48 @@ export class StrategyManager {
     setCalculatedIndicators(symbol, indicators) {
         this.indicatorsCache[symbol] = indicators;
     }
+    /**
+     * Compact multi-label tag string from the tech reason + strong-signal flags,
+     * e.g. "SwingSupport,FibResistance,BullishFVG,CVDDivergence".
+     * Consumed by the fine-tuning analyzer breakdown.
+     */
+    buildTechTag(techReason, cvd, sweep) {
+        const tags = techReason.trim().split(/\s+/)
+            .map(s => s.replace(/\(.*?\)/g, '').trim())
+            .filter(s => s.length > 0 && s !== '|');
+        if (cvd)
+            tags.push('CVDDivergence');
+        if (sweep)
+            tags.push('LiquiditySweep');
+        return Array.from(new Set(tags)).join(',');
+    }
+    /**
+     * Distance (as fraction of price) to the nearest known S/R, Fib or POC level.
+     * Snapshot at entry time; consumed by the fine-tuning analyzer.
+     */
+    getNearestLevelDistancePct(symbol, price) {
+        const ind = this.indicatorsCache[symbol];
+        if (!ind)
+            return undefined;
+        let best = undefined;
+        const consider = (level) => {
+            if (typeof level === 'number' && isFinite(level) && level > 0) {
+                const d = Math.abs(price - level) / level;
+                if (best === undefined || d < best)
+                    best = d;
+            }
+        };
+        for (const lv of (ind.srLevels || []))
+            consider(lv.price);
+        const fib = ind.fibonacci;
+        if (fib) {
+            for (const key of ['level236', 'level382', 'level500', 'level618', 'level786'])
+                consider(fib[key]);
+        }
+        if (typeof ind.poc === 'number')
+            consider(ind.poc);
+        return best;
+    }
     // NEW: Manual strategy parameter overrides from Performance Lab / Thinking Hub
     // Persisted to strategy_overrides.json so fine-tuning survives bot restarts
     manualOverrides = {};
@@ -68,11 +110,18 @@ export class StrategyManager {
         const overriddenKeys = Object.keys(ov).filter(k => ov[k] !== undefined);
         const obiMultiplier = ov.obiMultiplier ?? 1;
         const zScoreMultiplier = ov.zScoreMultiplier ?? 1;
+        const takeProfitPct = ov.takeProfitPct ?? base.takeProfitPct;
+        // Enforce the same RR guardrail as updateParams (SL between 0.25x and 0.50x of TP)
+        // so overrides from any path stay within risk policy
+        let stopLossPct = ov.stopLossPct ?? base.stopLossPct;
+        if (takeProfitPct && takeProfitPct > 0) {
+            stopLossPct = Math.max(takeProfitPct * 0.25, Math.min(takeProfitPct * 0.5, stopLossPct));
+        }
         return {
             obiThreshold: (base.obiThreshold ?? 0) * obiMultiplier,
             zScoreThreshold: (base.zScoreThreshold ?? 0) * zScoreMultiplier,
-            takeProfitPct: ov.takeProfitPct ?? base.takeProfitPct,
-            stopLossPct: ov.stopLossPct ?? base.stopLossPct,
+            takeProfitPct,
+            stopLossPct,
             minConfirmations: ov.minConfirmations ?? 1,
             obiMultiplier,
             zScoreMultiplier,
@@ -169,8 +218,23 @@ export class StrategyManager {
     getATR(symbol) {
         return this.marketRegime.getATR(symbol);
     }
+    /** Read-only view of cached chart indicators (fib/fvg/sr/poc) for dashboard visualization */
+    getIndicators(symbol) {
+        return this.indicatorsCache[symbol] || null;
+    }
+    /** Current VWAP snapshot for dashboard visualization */
+    getVwapData(symbol) {
+        return this.marketMicro.getVWAP(symbol);
+    }
     getRegimeMultipliers(symbol) {
         return this.marketRegime.getRegimeMultipliers(symbol);
+    }
+    /**
+     * Feed multi-timeframe candles (1d/4h/15m) into the candle-based regime detector.
+     * Called from main.ts every optimization cycle.
+     */
+    setRegimeCandles(symbol, candles) {
+        this.marketRegime.updateCandleContext(symbol, candles);
     }
     getMarketRegimeInfo() {
         const info = {};
@@ -232,6 +296,10 @@ export class StrategyManager {
         // Check market regime
         const regime = this.marketRegime.detectRegime(book.symbol);
         const trendDirection = this.marketRegime.getTrendDirection(book.symbol);
+        // Regime routing (candle-based v2): which sides may fire in this regime.
+        // TRENDING_BULL -> long-only | TRENDING_BEAR -> short-only |
+        // RANGING -> two-way MR | HIGH/LOW volatility -> stand aside entirely.
+        const allowedSides = this.marketRegime.getAllowedSides(regime);
         // Check liquidity sweep (high probability entry)
         const sweepSignal = this.marketMicro.detectLiquiditySweep(book.symbol, pBid, pAsk);
         if (sweepSignal) {
@@ -391,6 +459,12 @@ export class StrategyManager {
         // =========================================================================
         // EXECUTION TRIGGERS: Tick Imbalance & Momentum
         // =========================================================================
+        // Extreme z-score guard: |Z| beyond this means a panic flush / melt-up is in
+        // progress — entries there get filled at the worst prices and stopped within
+        // minutes (fastest loss of the 23-26 Aug run: -$50.78 in 26.9s at Z(-0.76)
+        // during a cascade; several others entered at |Z| ~ 1.0-1.15).
+        if (Math.abs(zScore) > CONFIG.EXTREME_ZSCORE_BLOCK)
+            return null;
         // LONG Entry Conditions (Buy)
         const isBuyAllowedByAI = activeBias === 'NEUTRAL' || activeBias === 'BULLISH';
         const hasLongImbalance = obi > adjustedObiThreshold;
@@ -419,7 +493,7 @@ export class StrategyManager {
             longConfirmations++;
         if (isInValueArea)
             longConfirmations++;
-        if (isBuyAllowedByAI && isNearSupportLevel && hasLongImbalance && hasLongMicroPriceDivergence && isOversold && hasUpwardMomentum) {
+        if (isBuyAllowedByAI && allowedSides.allowLong && isNearSupportLevel && hasLongImbalance && hasLongMicroPriceDivergence && isOversold && hasUpwardMomentum) {
             // NEW: Require minimum confirmations
             const minConf = this.manualOverrides[book.symbol]?.minConfirmations ?? 1;
             if (longConfirmations < minConf)
@@ -440,7 +514,13 @@ export class StrategyManager {
                 side: 'BUY',
                 price: pAsk,
                 reason,
-                confidence
+                confidence,
+                obi,
+                zScore,
+                confirmations: longConfirmations,
+                srDistancePct: this.getNearestLevelDistancePct(book.symbol, midPrice),
+                regime,
+                techTag: this.buildTechTag(techReason, hasBullishCVD, hasSweepBuy)
             };
         }
         // SHORT Entry Conditions (Sell)
@@ -471,7 +551,14 @@ export class StrategyManager {
             shortConfirmations++;
         if (isInValueArea)
             shortConfirmations++;
-        if (isSellAllowedByAI && isNearResistanceLevel && hasShortImbalance && hasShortMicroPriceDivergence && isOverbought && hasDownwardMomentum) {
+        if (isSellAllowedByAI && allowedSides.allowShort && isNearResistanceLevel && hasShortImbalance && hasShortMicroPriceDivergence && isOverbought && hasDownwardMomentum) {
+            // Data-driven trade filter: contrarian shorts during strong uptrends were the
+            // single largest loss source (-$178 across 24 trades). See CONFIG.TRADE_FILTERS.
+            const filters = CONFIG.TRADE_FILTERS;
+            if (!filters.ENABLE_SHORTS)
+                return null;
+            if (filters.SHORT_BLOCKED_REGIMES.includes(regime))
+                return null;
             const minConf = this.manualOverrides[book.symbol]?.minConfirmations ?? 1;
             if (shortConfirmations < minConf)
                 return null;
@@ -491,7 +578,13 @@ export class StrategyManager {
                 side: 'SELL',
                 price: pBid,
                 reason,
-                confidence
+                confidence,
+                obi,
+                zScore,
+                confirmations: shortConfirmations,
+                srDistancePct: this.getNearestLevelDistancePct(book.symbol, midPrice),
+                regime,
+                techTag: this.buildTechTag(techReason, hasBearishCVD, hasSweepSell)
             };
         }
         return null;

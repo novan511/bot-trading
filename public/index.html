@@ -635,16 +635,22 @@
 
     /* Mobile Responsiveness */
     @media (max-width: 768px) {
-      .container {
-        padding: 12px;
-        gap: 16px;
-      }
+      /* Header is fixed on desktop; stacking it vertically on mobile makes it taller
+         than the reserved 56px, so let it flow normally instead */
       header {
+        position: static;
         flex-direction: column;
         align-items: stretch;
         gap: 16px;
         padding: 16px 20px;
         text-align: center;
+      }
+      body {
+        margin-top: 0;
+      }
+      .container {
+        padding: 12px;
+        gap: 16px;
       }
       .brand-section {
         flex-direction: column;
@@ -698,6 +704,57 @@
       }
       h1 {
         font-size: 18px;
+      }
+    }
+
+    /* Small phones */
+    @media (max-width: 480px) {
+      .container {
+        padding: 10px;
+        gap: 12px;
+      }
+      header {
+        padding: 14px 14px;
+        border-radius: 14px;
+      }
+      h1 {
+        font-size: 16px;
+      }
+      .brand-section p {
+        font-size: 10px !important;
+      }
+      .status-item {
+        padding: 6px 10px;
+        font-size: 12px;
+      }
+      .metrics-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 8px;
+      }
+      .metric-card {
+        padding: 12px 10px;
+      }
+      .metric-value {
+        font-size: 17px !important;
+      }
+      .metric-label {
+        font-size: 10px !important;
+      }
+      table {
+        min-width: 520px;
+      }
+      th, td {
+        padding: 8px 6px !important;
+        font-size: 10px !important;
+      }
+      .panel {
+        padding: 12px;
+      }
+      .model-tab {
+        padding: 12px;
+      }
+      #ai-insights-container {
+        grid-template-columns: 1fr !important;
       }
     }
   </style>

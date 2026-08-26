@@ -148,6 +148,30 @@
       .layout{padding:10px;gap:12px}
       .kpis{grid-template-columns:repeat(2,1fr)}
       table{font-size:11px}th,td{padding:8px 8px}
+      .panel-head{flex-wrap:wrap;gap:8px}
+      .filter-bar{width:100%}
+    }
+    @media (max-width:480px){
+      body{margin-top:96px} /* top-bar membungkus jadi dua baris di layar sempit */
+      .top-bar{padding:8px 10px}
+      .top-row{gap:8px}
+      .brand-mark{width:28px;height:28px;font-size:11px}
+      .brand-name{font-size:14px}
+      .brand-sub{display:none}
+      .pill{padding:4px 9px;font-size:10px}
+      #model-label{font-size:11px !important}
+      .layout{padding:8px;gap:10px}
+      .kpis{grid-template-columns:repeat(2,1fr);gap:8px}
+      .kpi{padding:12px}
+      .kpi-value{font-size:19px}
+      .kpi-sub{flex-direction:column;gap:2px}
+      .split{gap:10px}
+      .panel{padding:12px;border-radius:12px}
+      .chart-container{height:200px;padding:0}
+      table{font-size:10px}
+      th,td{padding:6px 6px;letter-spacing:0.3px}
+      .filter-bar select,.filter-bar button{font-size:11px;padding:5px 8px}
+      .ai-card{padding:10px}
     }
   </style>
 </head>
@@ -212,6 +236,17 @@
           <div class="kpi-label">Total Trades</div>
           <div class="kpi-value" id="total-trades">0</div>
           <div class="kpi-sub"><span>Wins</span><span id="metric-wins-inline" style="color:var(--green)">0</span></div>
+        </div>
+      </div>
+
+      <div class="panel" id="golive-panel" style="display:none">
+        <div class="panel-head">
+          <div class="panel-title">Go-Live Checklist</div>
+          <span class="badge" id="golive-verdict">Loading...</span>
+        </div>
+        <div class="wrap">
+          <div id="golive-checks" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-bottom:12px"></div>
+          <div id="golive-extra" style="font-size:12px;color:var(--text-2);line-height:1.7"></div>
         </div>
       </div>
 
@@ -362,11 +397,13 @@
             <button onclick="applyFilters()">Apply</button>
             <button onclick="exportTradeHistory()" style="margin-left:8px;background:rgba(0,229,255,0.15);border:1px solid var(--cyan);color:var(--cyan);padding:6px 12px;border-radius:8px;font-size:12px;">Export CSV</button>
             <button onclick="exportTradeHistoryJson()" style="margin-left:8px;background:rgba(0,229,255,0.15);border:1px solid var(--cyan);color:var(--cyan);padding:6px 12px;border-radius:8px;font-size:12px;">Export JSON</button>
+            <button onclick="document.getElementById('import-file').click()" style="margin-left:8px;background:rgba(0,255,135,0.12);border:1px solid var(--green);color:var(--green);padding:6px 12px;border-radius:8px;font-size:12px;">Import</button>
+            <input type="file" id="import-file" accept=".csv,.json,.txt" style="display:none" onchange="importTradeHistory(this)">
           </div>
         </div>
         <div class="wrap">
           <table id="history-table">
-            <thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit</th><th>Qty</th><th>Net PnL</th><th>Hold</th><th>Reason</th></tr></thead>
+            <thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit</th><th>Qty</th><th>Net PnL</th><th>Hold</th><th>Reason</th><th>Exit Reason</th><th>MFE%</th><th>MAE%</th></tr></thead>
             <tbody id="history-body"></tbody>
           </table>
           <div class="empty-state" id="history-empty"><div class="empty-icon">⌛</div><p>Waiting for trade history...</p></div>
@@ -388,7 +425,45 @@
         if (p.type === 'dashboard_update') {
           cachedData = p.data;
           document.getElementById('model-label').innerText = currentModel === 'ALL' ? 'All Models' : currentModel;
-          refresh();
+    refresh();
+
+    // ===== Go-Live Checklist =====
+    function glEsc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    async function loadGoLiveReport() {
+      try {
+        const res = await fetch('/api/go-live-report');
+        if (!res.ok) return;
+        const r = await res.json();
+        document.getElementById('golive-panel').style.display = '';
+        const verdict = document.getElementById('golive-verdict');
+        verdict.textContent = r.readyForLive ? 'READY FOR LIVE' : 'BELUM SIAP GO-LIVE';
+        verdict.style.color = r.readyForLive ? 'var(--green)' : 'var(--red)';
+        verdict.style.borderColor = r.readyForLive ? 'rgba(0,255,157,0.4)' : 'rgba(255,59,92,0.4)';
+        document.getElementById('golive-checks').innerHTML = r.checklist.map(c => `
+          <div style="background:rgba(255,255,255,0.02);border:1px solid ${c.pass ? 'rgba(0,255,157,0.25)' : 'rgba(255,59,92,0.3)'};border-radius:10px;padding:10px 12px;">
+            <div style="font-size:11px;font-weight:700;color:${c.pass ? 'var(--green)' : 'var(--red)'}">${c.pass ? 'PASS' : 'FAIL'} &mdash; ${glEsc(c.label)}</div>
+            <div style="font-size:13px;color:var(--text-1);margin-top:4px;font-family:'Space Grotesk',sans-serif">${glEsc(c.value)}</div>
+          </div>`).join('');
+        let extra = '';
+        if (r.benchmark) {
+          extra += `Benchmark periode sama (${r.benchmark.periodDays} hari): bot <b style="color:${r.benchmark.botBeatsBtc ? 'var(--green)' : 'var(--red)'}">${r.benchmark.botReturnPct > 0 ? '+' : ''}${r.benchmark.botReturnPct}%</b> vs BTC buy&amp;hold <b>${r.benchmark.btcReturnPct > 0 ? '+' : ''}${r.benchmark.btcReturnPct}%</b> &mdash; bot <b>${r.benchmark.botBeatsBtc ? 'mengalahkan' : 'kalah dari'}</b> baseline.<br>`;
+        }
+        if (r.mfeAnalysis) {
+          extra += `MFE winner (n=${r.mfeAnalysis.sample}): P50 <b>${r.mfeAnalysis.p50}%</b>, P75 <b>${r.mfeAnalysis.p75}%</b>, P90 <b>${r.mfeAnalysis.p90}%</b>. ${glEsc(r.mfeAnalysis.note)}<br>`;
+        }
+        const edgeRegimes = (r.regimes || []).filter(x => x.edge);
+        if (edgeRegimes.length) {
+          extra += `Rezim dengan edge: <b>${edgeRegimes.map(x => glEsc(x.regime) + ' (PF ' + x.profitFactor + ')').join(', ')}</b><br>`;
+        }
+        const suspended = (r.symbols || []).filter(s => s.suspended);
+        if (suspended.length) {
+          extra += `<span style="color:var(--red)">Simbol disuspend guard otomatis: <b>${suspended.map(s => glEsc(s.symbol)).join(', ')}</b> (${suspended.map(s => glEsc(s.suspendCause || '')).join('; ')})</span>`;
+        }
+        document.getElementById('golive-extra').innerHTML = extra;
+      } catch {}
+    }
+    loadGoLiveReport();
+    setInterval(loadGoLiveReport, 60000);
         }
       } catch {}
     };
@@ -531,7 +606,9 @@
       empty.style.display='none';
       [...trades].reverse().slice(0, 200).forEach(t => {
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td style="color:var(--text-3)">${new Date(t.exitTime).toLocaleString()}</td><td><span class="sym">${t.symbol}</span></td><td class="${t.side==='BUY'?'pos-long':'pos-short'}">${t.side}</td><td>${priceFmt(t.symbol,t.entryPrice)}</td><td>${priceFmt(t.symbol,t.exitPrice)}</td><td>${t.quantity}</td><td style="font-weight:700;color:${t.netProfitUsd>=0?'var(--green)':'var(--red)'}">${fmtUsd(t.netProfitUsd)}</td><td>${t.holdTimeSec.toFixed(1)}s</td><td style="font-size:11px;color:var(--text-3)">${t.entryReason||''}</td>`;
+        const mfe = (t.mfePct !== undefined && t.mfePct !== null) ? (t.mfePct * 100).toFixed(3) : '';
+        const mae = (t.maePct !== undefined && t.maePct !== null) ? (t.maePct * 100).toFixed(3) : '';
+        tr.innerHTML = `<td style="color:var(--text-3)">${new Date(t.exitTime).toLocaleString()}</td><td><span class="sym">${t.symbol}</span></td><td class="${t.side==='BUY'?'pos-long':'pos-short'}">${t.side}</td><td>${priceFmt(t.symbol,t.entryPrice)}</td><td>${priceFmt(t.symbol,t.exitPrice)}</td><td>${t.quantity}</td><td style="font-weight:700;color:${t.netProfitUsd>=0?'var(--green)':'var(--red)'}">${fmtUsd(t.netProfitUsd)}</td><td>${t.holdTimeSec.toFixed(1)}s</td><td style="font-size:11px;color:var(--text-3)">${t.entryReason||''}</td><td style="font-size:11px;color:var(--text-3)">${t.exitReason||''}</td><td style="font-size:11px;color:var(--green)">${mfe}</td><td style="font-size:11px;color:var(--red)">${mae}</td>`;
         body.appendChild(tr);
       });
     }
@@ -541,7 +618,7 @@
       const rows = table.querySelectorAll('tbody tr');
       if (rows.length === 0) return;
     
-      let csv = 'Time,Symbol,Side,Entry,Exit,Qty,Net PnL,Hold,Reason\n';
+      let csv = 'Time,Symbol,Side,Entry,Exit,Qty,Net PnL,Hold,Reason,Exit Reason,MFE%,MAE%\n';
       rows.forEach(row => {
         const cells = row.querySelectorAll('td');
         if (cells.length < 9) return;
@@ -554,9 +631,12 @@
         const pnl = cells[6].innerText.trim();
         const hold = cells[7].innerText.trim();
         const reason = cells[8].innerText.trim();
+        const exitReason = cells.length > 9 ? cells[9].innerText.trim() : '';
+        const mfe = cells.length > 10 ? cells[10].innerText.trim() : '';
+        const mae = cells.length > 11 ? cells[11].innerText.trim() : '';
         // Escape commas in values
         const escape = s => `'${s.replace(/'/g, "''")}'`;
-        csv += `${escape(time)},${escape(symbol)},${escape(side)},${escape(entry)},${escape(exit)},${escape(qty)},${escape(pnl)},${escape(hold)},${escape(reason)}\n`;
+        csv += `${escape(time)},${escape(symbol)},${escape(side)},${escape(entry)},${escape(exit)},${escape(qty)},${escape(pnl)},${escape(hold)},${escape(reason)},${escape(exitReason)},${escape(mfe)},${escape(mae)}\n`;
       });
     
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -596,6 +676,31 @@
       a.download = 'trade-history.json';
       a.click();
       URL.revokeObjectURL(url);
+    }
+
+    async function importTradeHistory(input) {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const isJson = file.name.toLowerCase().endsWith('.json') || text.trim().startsWith('[');
+        const res = await fetch('/api/trades/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ format: isJson ? 'json' : 'csv', raw: text })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        const parts = [`${data.imported} trade baru`];
+        if (data.skippedDuplicate > 0) parts.push(`${data.skippedDuplicate} duplikat diabaikan`);
+        if (data.skippedInvalid > 0) parts.push(`${data.skippedInvalid} tidak valid`);
+        alert(`Import selesai: ${parts.join(', ')}.`);
+        refresh();
+      } catch (err) {
+        alert(`Import gagal: ${err.message}`);
+      } finally {
+        input.value = '';
+      }
     }
     
     function renderAI(insights) {

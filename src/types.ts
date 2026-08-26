@@ -39,6 +39,13 @@ export interface TradeSignal {
   reason: string;
   confidence: 'HIGH' | 'LOW';
   atr?: number;
+  // Entry context for fine-tuning analysis (snapshot at signal time)
+  obi?: number;
+  zScore?: number;
+  confirmations?: number;
+  srDistancePct?: number;
+  regime?: string;
+  techTag?: string;
 }
 
 export interface PartialTPLevel {
@@ -63,6 +70,17 @@ export interface Position {
   modelId?: string;
   partialTPs?: PartialTPLevel[];
   remainingQty?: number;
+  // Entry context snapshot (carried from TradeSignal for fine-tuning analysis)
+  entryObi?: number;
+  entryZScore?: number;
+  entryConfirmations?: number;
+  entrySrDistancePct?: number;
+  entryRegime?: string;
+  entryTechTag?: string;
+  // Realized partial-TP accounting (kept on position until final close)
+  realizedGrossUsd?: number;
+  realizedFeesUsd?: number;
+  partialCloses?: { qty: number; price: number; time: number }[];
 }
 
 export interface TradeRecord {
@@ -83,6 +101,16 @@ export interface TradeRecord {
   modelId?: string;
   exitReason?: string;
   partialCloses?: { qty: number; price: number; time: number }[];
+  // Entry context snapshot (for fine-tuning counterfactual analysis)
+  entryObi?: number;
+  entryZScore?: number;
+  entryConfirmations?: number;
+  entrySrDistancePct?: number;
+  entryRegime?: string;
+  entryTechTag?: string;
+  // Max Favorable / Adverse Excursion as fraction of entry price
+  mfePct?: number;
+  maePct?: number;
 }
 
 export interface ExecutionStats {
@@ -91,6 +119,10 @@ export interface ExecutionStats {
   losingTrades: number;
   winRate: number;
   grossProfitUsd: number;
+  // Gross profit of winners only / gross loss magnitude of losers only.
+  // Needed so Kelly sizing uses a correct avgWin/avgLoss ratio.
+  grossWinUsd?: number;
+  grossLossUsd?: number;
   totalFeesUsd: number;
   netProfitUsd: number;
   averageHoldTimeSec: number;

@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Changelog — Version Control | HFT Bot</title>
+<style>
+  :root {
+    --bg: #0a0e17;
+    --bg-panel: #111726;
+    --bg-card: #161d30;
+    --border: #1f2940;
+    --text-1: #e8eaf2;
+    --text-2: #a1a5b9;
+    --text-3: #6b7194;
+    --cyan: #00e5ff;
+    --green: #00ff9d;
+    --red: #ff3b5c;
+    --yellow: #f5c542;
+    --purple: #b388ff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text-1);
+    font-family: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    padding: 0 24px 24px;
+  }
+  .container { max-width: 1100px; margin: 0 auto; }
+  /* Sticky top bar — konsisten dengan Dashboard & Performance Lab */
+  .top-bar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    margin: 0 -24px 20px;
+    padding: 14px 24px;
+    background: rgba(10, 13, 24, 0.9);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+  }
+  .top-bar-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  header h1 { margin-bottom: 0; }
+  h1 { font-size: 22px; font-weight: 700; }
+  h1 span { color: var(--cyan); }
+  nav a {
+    color: var(--text-2); text-decoration: none; font-size: 12px;
+    border: 1px solid var(--border); padding: 6px 12px; border-radius: 8px; margin-left: 6px;
+  }
+  nav a:hover { color: var(--cyan); border-color: var(--cyan); }
+  .panel { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 14px; margin-bottom: 20px; overflow: hidden; }
+  .panel-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+  .panel-title { font-weight: 700; font-size: 14px; letter-spacing: 0.5px; }
+  .badge { font-size: 10px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-3); letter-spacing: 1px; }
+  .wrap { padding: 18px; }
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 12px; }
+  label { display: block; font-size: 11px; color: var(--text-3); margin-bottom: 5px; letter-spacing: 0.5px; text-transform: uppercase; }
+  input, select, textarea {
+    width: 100%; background: var(--bg-card); border: 1px solid var(--border);
+    color: var(--text-1); border-radius: 8px; padding: 9px 11px; font-size: 13px;
+    font-family: inherit; outline: none;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--cyan); }
+  textarea { resize: vertical; min-height: 60px; }
+  button {
+    cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600;
+    padding: 9px 18px; border-radius: 8px; border: 1px solid transparent;
+  }
+  .btn-primary { background: rgba(0,229,255,0.15); border-color: var(--cyan); color: var(--cyan); }
+  .btn-primary:hover { background: rgba(0,229,255,0.28); }
+  .btn-secondary { background: transparent; border-color: var(--border); color: var(--text-2); }
+  .btn-secondary:hover { border-color: var(--text-2); }
+  .btn-danger { background: transparent; border-color: rgba(255,59,92,0.4); color: var(--red); font-size: 11px; padding: 5px 10px; }
+  .btn-danger:hover { background: rgba(255,59,92,0.12); }
+  .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+  .toolbar input, .toolbar select { width: auto; }
+  .entry {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 18px; margin-bottom: 14px;
+  }
+  .entry-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+  .entry-title { font-weight: 700; font-size: 15px; margin: 6px 0 4px; }
+  .entry-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .tag { font-size: 10px; font-weight: 700; letter-spacing: 0.8px; padding: 3px 10px; border-radius: 999px; }
+  .tag-version { background: rgba(0,229,255,0.12); color: var(--cyan); border: 1px solid rgba(0,229,255,0.35); }
+  .tag-time { background: transparent; color: var(--text-3); border: 1px solid var(--border); font-weight: 400; letter-spacing: 0.3px; }
+  .cat-CONFIG { background: rgba(245,197,66,0.12); color: var(--yellow); border: 1px solid rgba(245,197,66,0.4); }
+  .cat-STRATEGY { background: rgba(0,229,255,0.12); color: var(--cyan); border: 1px solid rgba(0,229,255,0.4); }
+  .cat-RISK { background: rgba(255,59,92,0.12); color: var(--red); border: 1px solid rgba(255,59,92,0.4); }
+  .cat-EXIT { background: rgba(179,136,255,0.12); color: var(--purple); border: 1px solid rgba(179,136,255,0.4); }
+  .cat-INFRA { background: rgba(0,255,157,0.1); color: var(--green); border: 1px solid rgba(0,255,157,0.35); }
+  .cat-DATA { background: rgba(0,255,157,0.1); color: var(--green); border: 1px solid rgba(0,255,157,0.35); }
+  .cat-UI { background: rgba(161,165,185,0.12); color: var(--text-2); border: 1px solid rgba(161,165,185,0.4); }
+  .entry-body { margin-top: 10px; font-size: 13px; line-height: 1.55; color: var(--text-2); white-space: pre-wrap; word-break: break-word; }
+  .entry-field { margin-top: 8px; }
+  .entry-field b { color: var(--text-1); font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 2px; }
+  details.snapshot { margin-top: 10px; }
+  details.snapshot summary { cursor: pointer; font-size: 12px; color: var(--cyan); }
+  details.snapshot pre {
+    margin-top: 8px; background: #0c1120; border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px; font-size: 11px; overflow-x: auto; max-height: 320px; color: var(--text-2);
+  }
+  .empty-state { text-align: center; padding: 48px 20px; color: var(--text-3); }
+  .toast {
+    position: fixed; bottom: 24px; right: 24px; background: var(--bg-card);
+    border: 1px solid var(--green); color: var(--green); border-radius: 10px;
+    padding: 12px 18px; font-size: 13px; display: none; z-index: 99;
+  }
+  .toast.err { border-color: var(--red); color: var(--red); }
+  .stats-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+  .stat-chip { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 8px 14px; font-size: 12px; color: var(--text-2); }
+  .stat-chip b { color: var(--text-1); }
+
+  /* ===== RESPONSIVE ===== */
+  @media (max-width: 1024px) {
+    .container { max-width: 100%; }
+  }
+  @media (max-width: 640px) {
+    body { padding: 0 12px 12px; }
+    .top-bar { margin: 0 -12px 14px; padding: 10px 12px; }
+    .top-bar-inner { gap: 8px; }
+    h1 { font-size: 16px; }
+    h1 span { display: none; }
+    nav { display: flex; flex-wrap: wrap; gap: 5px; margin-left: auto; }
+    nav a { margin-left: 0; padding: 4px 9px; font-size: 11px; }
+    .wrap { padding: 12px; }
+    .panel-head { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .toolbar { width: 100%; }
+    .toolbar input { flex: 1; min-width: 0; }
+    /* title field uses inline grid-column: span 2 — collapse to single column on phones */
+    .form-grid > div { grid-column: auto !important; }
+    .form-grid { grid-template-columns: 1fr !important; }
+    .entry { padding: 12px 14px; border-radius: 10px; }
+    .entry-title { font-size: 14px; }
+    .entry-body { font-size: 12px; }
+    details.snapshot pre { max-height: 240px; font-size: 10px; }
+    button.btn-primary, button.btn-secondary { width: 100%; }
+    #snapshot-btn { margin-top: 8px; }
+    .stat-chip { padding: 6px 10px; font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+<header class="top-bar">
+  <div class="top-bar-inner">
+    <h1>Changelog <span>/ Version Control</span></h1>
+    <nav>
+      <a href="/">Dashboard</a>
+      <a href="/performance">Performance</a>
+      <a href="/thinking-hub">Thinking Hub</a>
+      <a href="/backtest">Backtest</a>
+    </nav>
+  </div>
+</header>
+
+<div class="container">
+  <div class="stats-row" id="stats-row"></div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">Tambah Update Baru</div>
+      <div class="badge">SETIAP PERUBAHAN PUNYA JEJAK</div>
+    </div>
+    <div class="wrap">
+      <div class="form-grid">
+        <div><label>Versi</label><input id="f-version" placeholder="v1.1.1"></div>
+        <div><label>Kategori</label>
+          <select id="f-category">
+            <option>CONFIG</option><option>STRATEGY</option><option>RISK</option>
+            <option>EXIT</option><option>INFRA</option><option>DATA</option><option>UI</option>
+          </select>
+        </div>
+        <div style="grid-column: span 2;"><label>Judul Update *</label><input id="f-title" placeholder="Ringkas dan jelas..."></div>
+      </div>
+      <div style="margin-bottom:12px"><label>Deskripsi (apa yang diubah)</label><textarea id="f-description" rows="2"></textarea></div>
+      <div class="form-grid">
+        <div><label>Alasan / motivasi (kenapa)</label><textarea id="f-reason" rows="2"></textarea></div>
+        <div><label>Dampak yang diharapkan</label><textarea id="f-impact" rows="2"></textarea></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <button class="btn-primary" onclick="submitEntry()">Simpan Entry</button>
+        <button class="btn-secondary" onclick="attachSnapshot()" id="snapshot-btn">Lampirkan Snapshot Config Aktif</button>
+        <span id="snapshot-status" style="font-size:12px;color:var(--text-3)"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">Riwayat Update</div>
+      <div class="toolbar" style="margin-bottom:0">
+        <input id="search" placeholder="Cari..." oninput="renderEntries()" style="width:160px">
+        <select id="filter-cat" onchange="renderEntries()">
+          <option value="">Semua Kategori</option>
+          <option>CONFIG</option><option>STRATEGY</option><option>RISK</option>
+          <option>EXIT</option><option>INFRA</option><option>DATA</option><option>UI</option>
+        </select>
+      </div>
+    </div>
+    <div class="wrap" id="entries-list">
+      <div class="empty-state"><p>Loading changelog...</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let entries = [];
+let pendingSnapshot = null;
+
+function showToast(msg, isErr) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (isErr ? ' err' : '');
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3500);
+}
+
+async function loadEntries() {
+  try {
+    const res = await fetch('/api/changelog');
+    entries = await res.json();
+    renderStats();
+    renderEntries();
+  } catch (e) {
+    document.getElementById('entries-list').innerHTML = '<div class="empty-state"><p>Gagal memuat changelog: ' + e.message + '</p></div>';
+  }
+}
+
+function renderStats() {
+  const el = document.getElementById('stats-row');
+  if (!entries.length) { el.innerHTML = ''; return; }
+  const versions = new Set(entries.map(e => e.version));
+  const cats = {};
+  entries.forEach(e => cats[e.category] = (cats[e.category] || 0) + 1);
+  let html = `<div class="stat-chip">Total update: <b>${entries.length}</b></div>` +
+             `<div class="stat-chip">Versi unik: <b>${versions.size}</b></div>`;
+  Object.entries(cats).sort((a,b) => b[1]-a[1]).forEach(([c,n]) => {
+    html += `<div class="stat-chip">${c}: <b>${n}</b></div>`;
+  });
+  el.innerHTML = html;
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function renderEntries() {
+  const list = document.getElementById('entries-list');
+  const q = document.getElementById('search').value.toLowerCase();
+  const cat = document.getElementById('filter-cat').value;
+  const filtered = entries.filter(e =>
+    (!cat || e.category === cat) &&
+    (!q || JSON.stringify([e.title,e.description,e.reason,e.impact,e.version]).toLowerCase().includes(q))
+  );
+  if (!filtered.length) {
+    list.innerHTML = '<div class="empty-state"><p>Belum ada entry yang cocok. Setiap kali mengubah config atau logic bot, catat di form atas.</p></div>';
+    return;
+  }
+  list.innerHTML = filtered.map(e => `
+    <div class="entry">
+      <div class="entry-head">
+        <div class="entry-meta">
+          <span class="tag tag-version">${esc(e.version)}</span>
+          <span class="tag cat-${esc(e.category)}">${esc(e.category)}</span>
+          <span class="tag tag-time">${new Date(e.timestamp).toLocaleString()}</span>
+        </div>
+        <button class="btn-danger" onclick="deleteEntry('${esc(e.id)}')">Hapus</button>
+      </div>
+      <div class="entry-title">${esc(e.title)}</div>
+      ${e.description ? `<div class="entry-field"><b>Apa</b>${esc(e.description)}</div>` : ''}
+      ${e.reason ? `<div class="entry-field"><b>Kenapa</b>${esc(e.reason)}</div>` : ''}
+      ${e.impact ? `<div class="entry-field"><b>Dampak</b>${esc(e.impact)}</div>` : ''}
+      ${e.configSnapshot ? `
+        <details class="snapshot">
+          <summary>Snapshot Config (${new Date(e.configSnapshot.capturedAt || e.timestamp).toLocaleString()})</summary>
+          <pre>${esc(JSON.stringify(e.configSnapshot, null, 2))}</pre>
+        </details>` : ''}
+    </div>
+  `).join('');
+}
+
+async function attachSnapshot() {
+  const btn = document.getElementById('snapshot-btn');
+  const status = document.getElementById('snapshot-status');
+  btn.disabled = true;
+  status.textContent = 'Mengambil snapshot...';
+  try {
+    const res = await fetch('/api/changelog/snapshot');
+    pendingSnapshot = await res.json();
+    status.textContent = 'Snapshot config aktif siap dilampirkan.';
+  } catch (e) {
+    status.textContent = 'Gagal: ' + e.message;
+  }
+  btn.disabled = false;
+}
+
+async function submitEntry() {
+  const payload = {
+    version: document.getElementById('f-version').value.trim(),
+    category: document.getElementById('f-category').value,
+    title: document.getElementById('f-title').value.trim(),
+    description: document.getElementById('f-description').value.trim(),
+    reason: document.getElementById('f-reason').value.trim(),
+    impact: document.getElementById('f-impact').value.trim(),
+    configSnapshot: pendingSnapshot || undefined
+  };
+  if (!payload.title) { showToast('Judul update wajib diisi', true); return; }
+  try {
+    const res = await fetch('/api/changelog', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || res.statusText);
+    }
+    document.getElementById('f-title').value = '';
+    document.getElementById('f-description').value = '';
+    document.getElementById('f-reason').value = '';
+    document.getElementById('f-impact').value = '';
+    pendingSnapshot = null;
+    document.getElementById('snapshot-status').textContent = '';
+    showToast('Entry changelog tersimpan');
+    loadEntries();
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+async function deleteEntry(id) {
+  if (!confirm('Hapus entry changelog ini?')) return;
+  try {
+    const res = await fetch('/api/changelog?id=' + encodeURIComponent(id), { method: 'DELETE' });
+    if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+    showToast('Entry dihapus');
+    loadEntries();
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+loadEntries();
+</script>
+</body>
+</html>

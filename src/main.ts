@@ -39,6 +39,78 @@ process.on('unhandledRejection', (reason: any) => {
 // Global BTC & USDT market dominance cache
 let currentGlobalDominance = { btcDom: 54.0, usdtDom: 5.5 };
 
+// Multi-timeframe market context cache (consumed by Thinking Hub fine-tuning via /api/market-context)
+let latestMarketContext: Record<string, any> = {};
+
+function emaOf(values: number[], period: number): number | null {
+  if (values.length < period) return null;
+  const k = 2 / (period + 1);
+  let e = values.slice(0, period).reduce((s, v) => s + v, 0) / period;
+  for (let i = period; i < values.length; i++) e = values[i] * k + e * (1 - k);
+  return e;
+}
+
+function summarizeTimeframe(candles: any[]): any {
+  if (!candles || candles.length < 21) return null;
+  const closes = candles.map(c => c.close);
+  const last = closes[closes.length - 1];
+  const emaFast = emaOf(closes, 9);
+  const emaSlow = emaOf(closes, 21);
+  const lookback = Math.min(20, closes.length - 1);
+  const basePrice = closes[closes.length - 1 - lookback];
+  const changePct = basePrice > 0 ? ((last - basePrice) / basePrice) * 100 : 0;
+
+  let trend: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = 'NEUTRAL';
+  if (emaFast !== null && emaSlow !== null) {
+    if (emaFast > emaSlow && changePct > 0) trend = 'BULLISH';
+    else if (emaFast < emaSlow && changePct < 0) trend = 'BEARISH';
+  }
+
+  return { trend, price: last, emaFast, emaSlow, changePct: +changePct.toFixed(2), candles: closes.length };
+}
+
+const MARKET_CONTEXT_TIMEFRAMES = ['1M', '1w', '1d', '4h', '1h', '30m', '15m', '5m'];
+
+/**
+ * Runs async tasks with bounded concurrency. Firing 70+ REST calls simultaneously
+ * triggers connection resets ("fetch failed") and rate-limiting on Windows/undici.
+ */
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let index = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (index < items.length) {
+      const current = index++;
+      results[current] = await fn(items[current]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+function buildMarketContext(candleData: Record<string, Record<string, any[]>>, symbols: string[]) {
+  const ctx: Record<string, any> = {};
+  for (const s of symbols) {
+    const prevTimeframes = latestMarketContext[s]?.timeframes || {};
+    const perTf: Record<string, any> = {};
+    for (const tf of MARKET_CONTEXT_TIMEFRAMES) {
+      // Keep the last good summary when a fetch cycle comes back empty
+      perTf[tf] = summarizeTimeframe(candleData[s]?.[tf] || []) || prevTimeframes[tf] || null;
+    }
+    // Composite bias across all timeframes
+    let bull = 0, bear = 0;
+    for (const tf of MARKET_CONTEXT_TIMEFRAMES) {
+      const d = perTf[tf];
+      if (!d) continue;
+      if (d.trend === 'BULLISH') bull++;
+      else if (d.trend === 'BEARISH') bear++;
+    }
+    const bias = bull > bear ? 'BULLISH' : bear > bull ? 'BEARISH' : 'MIXED';
+    ctx[s] = { timeframes: perTf, bias, updatedAt: Date.now() };
+  }
+  return ctx;
+}
+
 async function fetchGlobalMarketDominance(): Promise<{ btcDom: number; usdtDom: number }> {
   return circuitBreaker.call(
     'coingecko',
@@ -110,6 +182,9 @@ async function main() {
   
   // 2. Start the Premium Real-time HTML Dashboard server — pass exchange for backtesting
   const dashboardServer = new WebDashboardServer(PORT, exchange);
+
+  // Serve cached multi-timeframe market context to the Thinking Hub fine-tuning panel
+  dashboardServer.setMarketContextProvider(() => latestMarketContext);
 
   dashboardServer.registerPerformanceDataProvider(() => {
     const runners: Record<string, any> = {};
@@ -326,34 +401,61 @@ async function main() {
       return;
     }
 
+    // Apply consistently across ALL configured symbols via per-symbol overrides
+    // (the previous hardcoded-BTC updateParams path collided with the per-coin override system)
+    const targets = Object.keys(CONFIG.SYMBOLS);
+
     for (const suggestion of suggestions) {
       const param = suggestion.parameter;
-      const value = parseFloat(suggestion.suggestedValue);
-      if (isNaN(value)) continue;
+      const rawValue = String(suggestion.suggestedValue ?? '');
 
       switch (param) {
         case 'obiThreshold':
-          model.strategy.updateParams('BTC', { obiThreshold: value, zScoreThreshold: model.strategy.getParams('BTC')?.zScoreThreshold || 0.8, takeProfitPct: model.strategy.getParams('BTC')?.takeProfitPct || 0.015, stopLossPct: model.strategy.getParams('BTC')?.stopLossPct || 0.005 });
-          break;
-        case 'zScoreThreshold':
-          model.strategy.updateParams('BTC', { obiThreshold: model.strategy.getParams('BTC')?.obiThreshold || 0.2, zScoreThreshold: value, takeProfitPct: model.strategy.getParams('BTC')?.takeProfitPct || 0.015, stopLossPct: model.strategy.getParams('BTC')?.stopLossPct || 0.005 });
-          break;
-        case 'tpSlRatio':
-          const [tp, sl] = suggestion.suggestedValue.split('/');
-          if (tp && sl) {
-            const tpVal = parseFloat(tp.split(':')[1]);
-            const slVal = parseFloat(sl.split(':')[1]);
-            if (!isNaN(tpVal) && !isNaN(slVal)) {
-              model.strategy.updateParams('BTC', { obiThreshold: model.strategy.getParams('BTC')?.obiThreshold || 0.2, zScoreThreshold: model.strategy.getParams('BTC')?.zScoreThreshold || 0.8, takeProfitPct: tpVal, stopLossPct: slVal });
-            }
+        case 'zScoreThreshold': {
+          const value = parseFloat(rawValue);
+          if (isNaN(value) || value <= 0) break;
+          for (const sym of targets) {
+            const eff = model.strategy.getSymbolEffectiveParams(sym);
+            const isObi = param === 'obiThreshold';
+            const base = isObi
+              ? (eff.obiThreshold || 0) / (eff.obiMultiplier || 1)
+              : (eff.zScoreThreshold || 0) / (eff.zScoreMultiplier || 1);
+            if (base <= 0) continue;
+            const mult = Math.max(0.5, Math.min(2, +(value / base).toFixed(4)));
+            model.strategy.setStrategyOverride(sym, isObi ? 'obiMultiplier' : 'zScoreMultiplier', mult);
           }
           break;
-        case 'minConfirmations':
-          model.strategy.setStrategyOverride('ALL', 'minConfirmations', Math.round(value));
+        }
+        case 'tpSlRatio': {
+          const m = rawValue.match(/TP:([0-9.]+)\/SL:([0-9.]+)/i);
+          if (!m) break;
+          const tp = parseFloat(m[1]);
+          const slRaw = parseFloat(m[2]);
+          if (isNaN(tp) || isNaN(slRaw) || tp <= 0 || slRaw <= 0) break;
+          // Enforce the same RR guardrail as updateParams: SL between 0.25x and 0.50x of TP
+          const sl = Math.max(tp * 0.25, Math.min(tp * 0.5, slRaw));
+          for (const sym of targets) {
+            model.strategy.setStrategyOverride(sym, 'takeProfitPct', tp);
+            model.strategy.setStrategyOverride(sym, 'stopLossPct', +sl.toFixed(6));
+          }
           break;
-        case 'srThresholdPct':
-          model.strategy.setStrategyOverride('ALL', 'srThresholdPct', value);
+        }
+        case 'minConfirmations': {
+          const v = Math.round(parseFloat(rawValue));
+          if (isNaN(v) || v < 0 || v > 5) break;
+          for (const sym of targets) {
+            model.strategy.setStrategyOverride(sym, 'minConfirmations', v);
+          }
           break;
+        }
+        case 'srThresholdPct': {
+          const v = parseFloat(rawValue);
+          if (isNaN(v) || v <= 0) break;
+          for (const sym of targets) {
+            model.strategy.setStrategyOverride(sym, 'srThresholdPct', v);
+          }
+          break;
+        }
       }
     }
 
@@ -561,26 +663,38 @@ async function main() {
     }
 
     try {
-      const fetchPromises: Promise<void>[] = [];
+      const jobs: { symbol: string; tf: string }[] = [];
       for (const symbol of activeSymbols) {
         for (const tf of timeframes) {
-          const tfLimit = candleLimits[tf] || 100;
-          fetchPromises.push(
-            circuitBreaker.call(
-              'hyperliquid_rest',
-              () => exchange.getCandleSnapshot(symbol, tf, tfLimit),
-              () => []
-            ).then(candles => {
-              candleData[symbol][tf] = candles;
-            }).catch(err => {
-              logDebug(`Error fetching candles for ${symbol} (${tf}): ${err.message}`);
-              candleData[symbol][tf] = [];
-            })
-          );
+          jobs.push({ symbol, tf });
         }
       }
-      await Promise.all(fetchPromises);
+
+      // Bounded concurrency: bursts of 70+ simultaneous REST calls get connection-reset
+      await mapWithConcurrency(jobs, 6, async ({ symbol, tf }) => {
+        const tfLimit = candleLimits[tf] || 100;
+        let candles = await circuitBreaker.call(
+          'hyperliquid_rest',
+          () => exchange.getCandleSnapshot(symbol, tf, tfLimit),
+          () => [] as any[]
+        );
+        if (!candles || candles.length === 0) {
+          // Single retry after a short delay — transient network/rate-limit hiccups
+          await new Promise(resolve => setTimeout(resolve, 750));
+          try {
+            candles = await exchange.getCandleSnapshot(symbol, tf, tfLimit);
+          } catch (err: any) {
+            logDebug(`Error retrying candles for ${symbol} (${tf}): ${err.message}`);
+            candles = [];
+          }
+        }
+        if (candles && candles.length > 0) {
+          candleData[symbol][tf] = candles;
+        }
+      });
       logDebug('Successfully fetched all multi-timeframe candles.');
+      latestMarketContext = buildMarketContext(candleData, activeSymbols);
+      logDebug('Multi-timeframe market context updated for Thinking Hub.');
     } catch (err: any) {
       logDebug(`Error during parallel candle fetching: ${err.message}`);
     }
@@ -605,6 +719,19 @@ async function main() {
         for (const model of Object.values(models)) {
           model.strategy.setCalculatedIndicators(symbol, calculatedIndicators[symbol]);
         }
+      }
+    }
+
+    // Feed multi-timeframe candles into the candle-based regime detector (v2):
+    // makro = 1d + 4h structure, mikro = 15m ATR. Routing depends on this.
+    for (const symbol of activeSymbols) {
+      const regimeCandles = {
+        d1: candleData[symbol]?.['1d'] || [],
+        h4: candleData[symbol]?.['4h'] || [],
+        m15: candleData[symbol]?.['15m'] || []
+      };
+      for (const model of Object.values(models)) {
+        model.strategy.setRegimeCandles(symbol, regimeCandles);
       }
     }
 
@@ -648,9 +775,16 @@ async function main() {
         );
 
         if (optimized && optimized.parameters) {
-          logDebug(`[AI OPTIMIZER] [${modelId}] Received parameters shift`);
-          
+          // Parameter freeze (anti-overfit): insights tetap diambil untuk display
+          // Thinking Hub, tapi updateParams/setAiBiases TIDAK pernah dieksekusi
+          // kecuali AI_OPTIMIZER_ENABLED diaktifkan kembali secara sadar.
           latestAiInsights[modelId] = optimized.analysis || {};
+
+          if (!CONFIG.AI_OPTIMIZER_ENABLED) {
+            logDebug(`[AI OPTIMIZER] [${modelId}] Params FROZEN — insight disimpan untuk display saja`);
+            return;
+          }
+
           model.strategy.setAiBiases(latestAiInsights[modelId]);
 
           for (const [symbol, params] of Object.entries(optimized.parameters)) {

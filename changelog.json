@@ -1,0 +1,77 @@
+[
+  {
+    "id": "chg_20260826_v1_2_0_discipline",
+    "timestamp": 1787736600000,
+    "version": "v1.2.0",
+    "category": "RISK",
+    "title": "Disiplin kuant: kill-switch otomatis per simbol + pembekuan AI optimizer + laporan Go-Live",
+    "description": "(1) RISK_GUARDS: simbol dengan 30 trade terakhir net negatif + WR<50% otomatis disuspend 24 jam; 5 loss beruntun pada simbol sama = suspend 8 jam (breaker dievaluasi tiap trade close). (2) AI_OPTIMIZER_ENABLED=false: pipeline indikator/regime tetap refresh tiap 3 menit, tapi NVIDIA tidak lagi memutasi parameter (updateParams & setAiBiases dibekukan anti-overfit). (3) Endpoint /api/go-live-report + panel Go-Live Checklist di Performance Lab: PF>=1.3, DD<=10%, sampel>=100, konsistensi 50 trade terakhir, edge di >=2 rezim, benchmark vs BTC buy&hold, saran TP dari distribusi MFE winner.",
+    "reason": "Review 200 trade membuktikan sistem rugi bukan karena kurang tuning, tapi karena parameter berubah tiap 3 menit (curve fitting) dan simbol rugi dibiarkan jalan terlalu lama sebelum dikunci manual.",
+    "impact": "Ekspektasi: frekuensi trade turun pada simbol buruk (auto), parameter stabil sehingga hasil bisa diatribusikan, dan keputusan go-live punya kriteria statistik objek bukan perasaan."
+  },
+  {
+    "id": "chg_20260826_v1_1_0_risk_exit",
+    "timestamp": 1787731800000,
+    "version": "v1.1.0",
+    "category": "RISK",
+    "title": "Fine-tuning besar berbasis review 200 trade (23-26 Agu): exit engine, sizing, filter",
+    "description": "Hasil analisa trade-history 200 trade (net -$272, PF 0.82, WR 64% tapi avgWin $9.6 vs avgLoss -$20.9). Perubahan: (1) Trailing stop hanya mengencang setelah profit >= 50% jarak TP (TRAILING_ACTIVATION_RATIO). (2) Breakeven-stop buffer naik 0.3% -> 0.5% supaya winner tidak jadi scratch exit. (3) Kelly sizing tanpa pengali x10, dibatasi tilt 0.75x-1.25x + perbaikan kalkulasi avgWin/avgLoss dari grossWin/grossLoss terpisah. (4) Cap notional $3000/posisi + cap exposure bruto $20000. (5) Cooldown 1800s per-symbol setelah STOP LOSS. (6) Guard entry |Z-score| > 1.0 ditolak. (7) Short dimatikan (SELL -$300 vs BUY +$27). (8) DOGE dibanned (WR 37%, -$239 = 87% total rugi).",
+    "reason": "Kebocoran struktural: winner dipotong terlalu dini (median win $2), loss full SL; window Kelly x10 menghasilkan posisi 2x dan semua loss terbesar (-$48..-$51); re-entry pasca-SL menambah rugi -$47.",
+    "impact": "Target: expectancy dari -$1.36 menjadi positif. Risiko per trade dibatasi maks ~$30-$45. Verifikasi setelah >= 50 trade baru sebelum penyesuaian berikutnya.",
+    "configSnapshot": {
+      "capturedAt": "2026-08-26T15:10:00.000Z",
+      "tradingMode": "SIMULATION",
+      "tradeFilters": {
+        "ENABLE_SHORTS": false,
+        "SHORT_BLOCKED_REGIMES": [
+          "TRENDING_BULL"
+        ],
+        "SYMBOL_SIZE_MULTIPLIERS": {
+          "XRP": 0.5,
+          "SUI": 0.5,
+          "DOGE": 0,
+          "SOL": 0.5
+        }
+      },
+      "exits": {
+        "breakevenStopActivationBufferPct": 0.005,
+        "trailingActivationRatio": 0.5,
+        "extremeZscoreBlock": 1
+      },
+      "risk": {
+        "maxPositionNotionalUsd": 3000,
+        "grossExposureCapUsd": 20000,
+        "postStopLossCooldownSec": 1800
+      }
+    }
+  },
+  {
+    "id": "chg_20260826_v1_1_0_data_export",
+    "timestamp": 1787731200000,
+    "version": "v1.1.0",
+    "category": "DATA",
+    "title": "Export CSV/JSON history kini memuat Exit Reason, MFE%, MAE%",
+    "description": "Kolom baru di tabel Trade History performance.html dan file export: Exit Reason (TRAILING PROFIT LOCKED / STOP LOSS TRIGGERED / TIME EXPIRED / SAFEGUARD), MFE% (max favorable excursion), MAE% (max adverse excursion). Importer server juga menerima kolom tambahan ini (backward compatible dengan CSV lama 9 kolom).",
+    "reason": "Analisa fine-tuning sebelumnya buta arah exit karena export hanya mencatat alasan entry. Dengan MFE/MAE bisa diukur apakah trailing/breakeven masih terlalu ketat.",
+    "impact": "Review berikutnya bisa menghitung: berapa banyak winner yang MFE-nya besar tapi exited kecil (trailing kepanjangan), dan seberapa dalam MAE rata-rata sebelum trade balik profit (ruang SL ideal)."
+  },
+  {
+    "id": "chg_20260826_v1_1_0_changelog_page",
+    "timestamp": 1787730600000,
+    "version": "v1.1.0",
+    "category": "UI",
+    "title": "Halaman Changelog / Version Control (/changelog)",
+    "description": "Halaman baru untuk mencatat setiap update bot: versi, kategori (CONFIG/STRATEGY/RISK/EXIT/INFRA/DATA/UI), judul, deskripsi, alasan, dampak, plus snapshot konfigurasi aktif yang bisa dilampirkan satu klik. Data tersimpan di changelog.json (bisa di-commit ke git). API: GET/POST/DELETE /api/changelog, GET /api/changelog/snapshot.",
+    "reason": "Sebelumnya tidak ada jejak versi: config diubah tanpa catatan sehingga sulit tahu parameter apa yang aktif saat periode profit/rugi tertentu.",
+    "impact": "Setiap eksperimen tuning harus dicatat di sini agar performa bisa dikaitkan dengan parameter yang aktif pada periode tersebut."
+  },
+  {
+    "id": "chg_20260823_v1_0_x_finetune_params",
+    "timestamp": 1787454360000,
+    "version": "v1.0.x",
+    "category": "CONFIG",
+    "title": "Per-coin fine-tuning + overrides terhubung ke execution (commit 4a831f8)",
+    "description": "Parameter per-coin (obiThreshold, zScoreThreshold, TP/SL) dapat dioptimasi AI dan disimpan sebagai override persisten; execution membaca override via paramProvider.",
+    "impact": "Baseline sebelum review 23-26 Agu."
+  }
+]

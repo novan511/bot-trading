@@ -392,6 +392,35 @@
       color: var(--neon-cyan);
       margin-top: 3px;
     }
+    .ft-tf-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .ft-tf-card {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border-light);
+      border-radius: 8px;
+      padding: 7px 8px;
+      text-align: center;
+    }
+    .ft-tf-label {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-muted);
+    }
+    .ft-tf-trend {
+      font-size: 11px;
+      font-weight: 700;
+      margin-top: 3px;
+    }
+    .ft-tf-chg {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      margin-top: 2px;
+    }
     .ft-param-badge {
       font-size: 8px;
       font-weight: 700;
@@ -483,6 +512,15 @@
           <option value="300">300 Candles</option>
         </select>
         <span style="flex:1"></span>
+        <span id="overlay-toggles" style="display:flex;gap:8px;align-self:center;flex-wrap:wrap;">
+          <label style="font-size:10px;color:#fbbf24;display:flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" data-ov="ema" checked style="accent-color:#fbbf24;">EMA</label>
+          <label style="font-size:10px;color:#00ff87;display:flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" data-ov="sr" checked style="accent-color:#00ff87;">S/R</label>
+          <label style="font-size:10px;color:#ffd600;display:flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" data-ov="fib" checked style="accent-color:#ffd600;">Fib</label>
+          <label style="font-size:10px;color:#a855f7;display:flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" data-ov="poc" checked style="accent-color:#a855f7;">POC</label>
+          <label style="font-size:10px;color:#00f2fe;display:flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" data-ov="vwap" checked style="accent-color:#00f2fe;">VWAP</label>
+          <label style="font-size:10px;color:#c084fc;display:flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" data-ov="fvg" checked style="accent-color:#c084fc;">FVG</label>
+          <label style="font-size:10px;color:var(--text-muted);display:flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" data-ov="trades" checked>Trades</label>
+        </span>
         <span id="chart-status" style="font-size:11px;color:var(--text-muted);align-self:center;">Loading data...</span>
       </div>
     </div>
@@ -525,14 +563,6 @@
       </div>
     </div>
 
-    <!-- AI TOP-DOWN MARKET ANALYSIS -->
-    <div class="thinking-section" id="timeframe-analysis-section" style="margin-top: 0px;">
-      <h3>&#x1F30D; AI Top-Down Market Analysis — <span id="tf-analysis-symbol">--</span></h3>
-      <div id="timeframe-analysis-content">
-        <div class="no-data">Waiting for AI timeframe analysis...</div>
-      </div>
-    </div>
-
     <!-- ATR & VOLATILITY -->
     <div class="thinking-section" id="atr-section" style="margin-top: 0px;">
       <h3>&#x1F4C8; ATR & Volatility — <span id="atr-symbol">--</span></h3>
@@ -541,11 +571,18 @@
       </div>
     </div>
 
-    <!-- FINE-TUNING LEARNING (per coin, belajar dari Trade History coin ini) -->
+    <!-- FINE-TUNING LEARNING (per coin, belajar dari Trade History + chart multi-timeframe coin ini) -->
     <div class="thinking-section" id="ft-section" style="margin-top: 0px; border: 1px solid rgba(160,0,255,0.25);">
-      <h3 style="color: var(--neon-purple);">&#x1F504; Fine-tuning Learning — <span id="ft-symbol" style="color:var(--neon-cyan);">--</span></h3>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <h3 style="color: var(--neon-purple);margin:0;">&#x1F504; Fine-tuning Learning — <span id="ft-symbol" style="color:var(--neon-cyan);">--</span></h3>
+        <button id="ft-reset-btn" onclick="resetFineTuning()" title="Hapus semua override fine-tuning untuk coin ini"
+          style="background:rgba(255,0,85,0.06);border:1px solid rgba(255,0,85,0.35);color:#ff5577;padding:4px 10px;border-radius:8px;font-size:10px;font-weight:600;font-family:'Outfit',sans-serif;cursor:pointer;white-space:nowrap;">&#x21BA; Reset ke Default</button>
+      </div>
       <div id="ft-stats" class="info-row" style="border:none;padding:2px 0 10px 0;font-size:12px;color:var(--text-muted);"></div>
+      <div id="ft-mkt"></div>
       <div id="ft-params"></div>
+      <div id="ft-warning"></div>
+      <div id="ft-breakdown"></div>
       <div id="ft-content">
         <div class="no-data">Menganalisis trade history coin ini...</div>
       </div>
@@ -805,6 +842,189 @@
       title: 'TRAIL'
     });
 
+    // ============================================================
+    // Indicator overlays (VISUAL ONLY — tidak mengubah logika trading)
+    // EMA20/50 dihitung dari candle tampilan; S/R, Fib, POC, VWAP, FVG
+    // dan marker trade diambil dari state asli bot via /api/chart-indicators
+    // ============================================================
+    const ema20Series = chart.addLineSeries({
+      color: 'rgba(251,191,36,0.85)',
+      lineWidth: 1,
+      lastValueVisible: false,
+      priceLineVisible: false,
+      crosshairMarkerVisible: false,
+      title: 'EMA20'
+    });
+    const ema50Series = chart.addLineSeries({
+      color: 'rgba(167,139,250,0.85)',
+      lineWidth: 1,
+      lastValueVisible: false,
+      priceLineVisible: false,
+      crosshairMarkerVisible: false,
+      title: 'EMA50'
+    });
+
+    let overlayData = null;          // hasil /api/chart-indicators
+    let indicatorPriceLines = [];    // price lines aktif milik overlay
+    let tradeHistoryMarkers = [];    // marker entry/exit dari riwayat trade
+
+    const overlayFlags = { ema: true, sr: true, fib: true, poc: true, vwap: true, fvg: true, trades: true };
+    document.querySelectorAll('#overlay-toggles input[data-ov]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        overlayFlags[cb.dataset.ov] = cb.checked;
+        renderChartOverlays();
+        applyAllMarkers();
+      });
+    });
+
+    function computeEmaSeries(candles, period) {
+      const k = 2 / (period + 1);
+      let e = null;
+      const out = [];
+      for (const c of candles) {
+        e = e === null ? c.close : c.close * k + e * (1 - k);
+        out.push({ time: c.time, value: e });
+      }
+      return out;
+    }
+
+    function clearIndicatorLines() {
+      for (const pl of indicatorPriceLines) {
+        try { candleSeries.removePriceLine(pl); } catch {}
+      }
+      indicatorPriceLines = [];
+    }
+
+    function addOverlayLevel(price, color, title, style, width) {
+      if (price === undefined || price === null || !isFinite(price)) return;
+      indicatorPriceLines.push(candleSeries.createPriceLine({
+        price,
+        color,
+        lineWidth: width || 1,
+        lineStyle: style !== undefined ? style : LightweightCharts.LineStyle.Solid,
+        axisLabelVisible: true,
+        title: title || ''
+      }));
+    }
+
+    function renderChartOverlays() {
+      clearIndicatorLines();
+      if (!overlayData || !currentCandleData || currentCandleData.length === 0) {
+        ema20Series.setData([]);
+        ema50Series.setData([]);
+        return;
+      }
+
+      // EMA candle-based (visual approximation dari data yang tampil)
+      if (overlayFlags.ema) {
+        ema20Series.setData(computeEmaSeries(currentCandleData, 20));
+        ema50Series.setData(computeEmaSeries(currentCandleData, 50));
+      } else {
+        ema20Series.setData([]);
+        ema50Series.setData([]);
+      }
+
+      // Swing Support/Resistance (ketebalan = strength)
+      if (overlayFlags.sr && Array.isArray(overlayData.srLevels)) {
+        for (const lv of overlayData.srLevels.slice(0, 14)) {
+          const isSup = lv.type === 'SUPPORT';
+          addOverlayLevel(
+            lv.price,
+            isSup ? 'rgba(0,255,135,0.5)' : 'rgba(255,42,95,0.5)',
+            `${isSup ? 'S' : 'R'}${lv.strength || ''}`,
+            LightweightCharts.LineStyle.Solid,
+            (lv.strength || 1) >= 3 ? 2 : 1
+          );
+        }
+      }
+
+      // Fibonacci retracement levels dari indikator bot
+      if (overlayFlags.fib && overlayData.fib) {
+        const f = overlayData.fib;
+        addOverlayLevel(f.high, 'rgba(255,214,0,0.35)', 'FIB 100', LightweightCharts.LineStyle.Dotted);
+        for (const key of ['level786', 'level618', 'level500', 'level382', 'level236']) {
+          if (f[key] !== undefined) {
+            const label = 'FIB ' + key.replace('level', '').split('').join('.');
+            addOverlayLevel(f[key], 'rgba(255,214,0,0.65)', label, LightweightCharts.LineStyle.Dashed);
+          }
+        }
+        addOverlayLevel(f.low, 'rgba(255,214,0,0.35)', 'FIB 0', LightweightCharts.LineStyle.Dotted);
+      }
+
+      // Point of Control
+      if (overlayFlags.poc && overlayData.poc) {
+        addOverlayLevel(overlayData.poc, 'rgba(168,85,247,0.8)', 'POC', LightweightCharts.LineStyle.Solid, 2);
+      }
+
+      // VWAP + bands
+      if (overlayFlags.vwap && overlayData.vwap && overlayData.vwap.price) {
+        addOverlayLevel(overlayData.vwap.price, '#00f2fe', 'VWAP', LightweightCharts.LineStyle.Dashed, 2);
+        if (overlayFlags.fvg) {
+          // bands digambar halus hanya kalau FVG layer aktif agar tidak terlalu ramai
+          addOverlayLevel(overlayData.vwap.upperBand, 'rgba(0,242,254,0.25)', '', LightweightCharts.LineStyle.Dotted);
+          addOverlayLevel(overlayData.vwap.lowerBand, 'rgba(0,242,254,0.25)', '', LightweightCharts.LineStyle.Dotted);
+        }
+      }
+
+      // Fair Value Gap zones (garis tepi atas & bawah zona terbaru yang belum terisi)
+      if (overlayFlags.fvg && Array.isArray(overlayData.fvgs)) {
+        for (const zone of overlayData.fvgs) {
+          const col = zone.type === 'BULLISH' ? 'rgba(192,132,252,0.55)' : 'rgba(255,42,95,0.45)';
+          addOverlayLevel(zone.top, col, `FVG-${zone.type === 'BULLISH' ? 'B' : 'S'}`, LightweightCharts.LineStyle.Dashed);
+          addOverlayLevel(zone.bottom, col, '', LightweightCharts.LineStyle.Dashed);
+        }
+      }
+    }
+
+    async function fetchChartIndicators() {
+      try {
+        const res = await fetch(`/api/chart-indicators?symbol=${encodeURIComponent(symbol)}`);
+        if (!res.ok) return;
+        overlayData = await res.json();
+        buildTradeMarkers();
+        renderChartOverlays();
+        applyAllMarkers();
+      } catch (err) {
+        console.error('Fetch chart indicators error:', err);
+      }
+    }
+
+    function buildTradeMarkers() {
+      tradeHistoryMarkers = [];
+      if (!overlayFlags.trades || !overlayData || !Array.isArray(overlayData.trades) || currentCandleData.length === 0) return;
+      const firstTime = currentCandleData[0].time;
+      const lastTime = currentCandleData[currentCandleData.length - 1].time;
+      for (const t of overlayData.trades) {
+        const entrySec = Math.floor(t.entryTime / 1000);
+        const exitSec = Math.floor(t.exitTime / 1000);
+        if (entrySec >= firstTime && entrySec <= lastTime) {
+          tradeHistoryMarkers.push({
+            time: entrySec,
+            position: t.side === 'BUY' ? 'belowBar' : 'aboveBar',
+            color: t.side === 'BUY' ? 'rgba(0,255,135,0.9)' : 'rgba(255,42,95,0.9)',
+            shape: t.side === 'BUY' ? 'arrowUp' : 'arrowDown',
+            text: ''
+          });
+        }
+        if (exitSec >= firstTime && exitSec <= lastTime) {
+          tradeHistoryMarkers.push({
+            time: exitSec,
+            position: t.netProfitUsd >= 0 ? 'aboveBar' : 'belowBar',
+            color: t.netProfitUsd >= 0 ? 'rgba(0,229,255,0.9)' : 'rgba(255,214,0,0.9)',
+            shape: 'circle',
+            text: ''
+          });
+        }
+      }
+      tradeHistoryMarkers.sort((a, b) => a.time - b.time);
+    }
+
+    /** Gabungkan marker riwayat trade dengan marker posisi aktif (entry/TP/SL/TRAIL) */
+    function applyAllMarkers() {
+      const merged = [...tradeHistoryMarkers, ...currentMarkers].sort((a, b) => a.time - b.time);
+      try { candleSeries.setMarkers(merged); } catch {}
+    }
+
     // Markers for entry, TP, SL
     let currentMarkers = [];
     // Track lines data
@@ -884,11 +1104,11 @@
         }
 
         candleSeries.setData(candles);
-        
-        // Re-apply markers if any
-        if (currentMarkers.length > 0) {
-          candleSeries.setMarkers(currentMarkers);
-        }
+
+        // Re-apply markers + redraw overlays untuk window candle baru
+        buildTradeMarkers();
+        renderChartOverlays();
+        applyAllMarkers();
 
         statusEl.textContent = `${candles.length} candle ${tf} | ${symbol}`;
       } catch (err) {
@@ -1053,9 +1273,6 @@
       }
       thinkingContent.innerHTML = thinkingHtml;
 
-      // --- Update Timeframe Analysis ---
-      updateTimeframeAnalysis(insight, symbol);
-
       // --- Update ATR ---
       updateATR(data, symbol);
 
@@ -1129,9 +1346,9 @@
             No active positions for ${symbol}.<br>
             AI sedang memantau dan menunggu sinyal entry yang tepat.
           </div>`;
-        // Clear markers
-        candleSeries.setMarkers([]);
+        // Clear position markers (marker riwayat trade tetap tampil)
         currentMarkers = [];
+        applyAllMarkers();
       }
 
       // --- Update Parameters ---
@@ -1280,7 +1497,7 @@
       }
 
       currentMarkers = markers;
-      candleSeries.setMarkers(markers);
+      applyAllMarkers();
     }
 
     // ============================================================
@@ -1474,11 +1691,11 @@
       const contentEl = document.getElementById('ft-content');
 
       if (total === 0) {
-        contentEl.innerHTML = `<div class="no-data">Belum ada trade untuk ${symbol}. Fine-tuning akan aktif setelah ada minimal 5 trade.</div>`;
+        contentEl.innerHTML = `<div class="no-data">Belum ada trade untuk ${symbol}. Fine-tuning akan aktif setelah ada minimal 10 trade.</div>`;
         return;
       }
-      if (total < 5) {
-        contentEl.innerHTML = `<div class="no-data">Butuh minimal 5 trade (${total}/5) untuk analisis fine-tuning ${symbol}.</div>`;
+      if (total < 10) {
+        contentEl.innerHTML = `<div class="no-data">Butuh minimal 10 trade (${total}/10) untuk analisis fine-tuning ${symbol}.</div>`;
         return;
       }
 
@@ -1489,6 +1706,8 @@
 
         lastFtParams = data.currentParams || null;
         renderFtParams(lastFtParams);
+        renderFtWarning(lastFtParams);
+        renderBreakdown(data.breakdown, data.filters);
 
         const suggestions = data.suggestions || [];
 
@@ -1553,6 +1772,126 @@
         </div>`;
     }
 
+    function renderFtWarning(p) {
+      const el = document.getElementById('ft-warning');
+      if (!el) return;
+      const tunedKeys = Array.isArray(p && p.overriddenKeys) ? p.overriddenKeys : [];
+      const tpSlTuned = tunedKeys.includes('takeProfitPct') || tunedKeys.includes('stopLossPct');
+      if (!tpSlTuned) { el.innerHTML = ''; return; }
+      el.innerHTML = `<div style="font-size:11px;color:var(--neon-gold);border:1px solid rgba(255,200,60,0.35);background:rgba(255,200,60,0.05);border-radius:8px;padding:6px 10px;margin-bottom:12px;">
+        &#9888;&#xFE0F; TP/SL ${symbol} di-override manual &mdash; update TP/SL dari AI Optimizer dibypass untuk coin ini sampai kamu tekan Reset ke Default.</div>`;
+    }
+
+    // ============================================================
+    // Breakdown Bayesian per Side / Regime / Symbol / Tag
+    // (evidence base dari trade history, dihitung server-side)
+    // ============================================================
+    function renderBreakdown(bd, filters) {
+      const el = document.getElementById('ft-breakdown');
+      if (!el) return;
+      if (!bd) { el.innerHTML = ''; return; }
+
+      const wrColor = wr => wr >= 0.5 ? 'var(--neon-green)' : 'var(--neon-red)';
+      const netColor = v => v >= 0 ? 'var(--neon-green)' : 'var(--neon-red)';
+      const fmtNet = v => `${v >= 0 ? '+' : '-'}$${Math.abs(v).toFixed(2)}`;
+
+      const table = (title, rows) => {
+        if (!rows || rows.length === 0) return '';
+        const trs = rows.map(r => `
+          <tr>
+            <td style="padding:2px 8px 2px 0;color:var(--text-main);">${r.key}</td>
+            <td style="padding:2px 8px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;">${r.trades}</td>
+            <td style="padding:2px 8px;color:${wrColor(r.winRate)};font-family:'JetBrains Mono',monospace;">${(r.winRate * 100).toFixed(1)}%</td>
+            <td style="padding:2px 0;color:${netColor(r.netProfitUsd)};font-family:'JetBrains Mono',monospace;font-weight:600;">${fmtNet(r.netProfitUsd)}</td>
+          </tr>`).join('');
+        return `
+          <div style="flex:1;min-width:150px;">
+            <div style="font-size:9px;text-transform:uppercase;letter-spacing:0.8px;color:var(--text-muted);margin-bottom:4px;">${title}</div>
+            <table style="border-collapse:collapse;width:100%;font-size:11px;">
+              <tr style="color:var(--text-muted);"><th style="text-align:left;font-weight:400;padding-right:8px;">key</th><th style="font-weight:400;padding-right:8px;">n</th><th style="font-weight:400;padding-right:8px;">WR</th><th style="font-weight:400;text-align:left;">Net</th></tr>
+              ${trs}
+            </table>
+          </div>`;
+      };
+
+      const tagRows = (bd.byTag || []).slice().sort((a, b) => b.trades - a.trades).slice(0, 8);
+
+      let filterNote = '';
+      if (filters) {
+        const parts = [];
+        if (filters.enableShorts === false) parts.push('Short dimatikan total');
+        else if (Array.isArray(filters.shortBlockedRegimes) && filters.shortBlockedRegimes.length > 0) {
+          parts.push(`SELL diblokir di ${filters.shortBlockedRegimes.join(', ')}`);
+        }
+        const mult = Object.entries(filters.symbolSizeMultipliers || {});
+        if (mult.length > 0) {
+          parts.push(`Size dikurangi: ${mult.map(([k, v]) => `${k} x${v}`).join(', ')}`);
+        }
+        if (parts.length > 0) {
+          filterNote = `<div style="font-size:10px;color:var(--neon-cyan);border:1px solid rgba(0,242,254,0.25);background:rgba(0,242,254,0.04);border-radius:6px;padding:5px 8px;margin-bottom:10px;">&#x1F6E1;&#xFE0F; Filter aktif: ${parts.join(' &bull; ')}</div>`;
+        }
+      }
+
+      el.innerHTML = `
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.8px;color:var(--text-muted);margin-bottom:6px;">&#x1F52C; Breakdown Evidence (window recency)</div>
+        ${filterNote}
+        <div style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:12px;">
+          ${table('Side', bd.bySide)}
+          ${table('Regime', bd.byRegime)}
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:12px;">
+          ${table('Symbol (worst dulu)', (bd.bySymbol || []).slice(0, 6))}
+          ${table('Tag Indikator (top)', tagRows)}
+        </div>`;
+    }
+
+    // ============================================================
+    // Arah Market Multi-Timeframe (chart context untuk fine-tuning)
+    // ============================================================
+    const FT_TFS = [
+      { key: '1M', label: 'Monthly' },
+      { key: '1w', label: 'Weekly' },
+      { key: '1d', label: 'Daily' },
+      { key: '4h', label: '4H' },
+      { key: '1h', label: '1H' },
+      { key: '30m', label: '30m' },
+      { key: '15m', label: '15m' },
+      { key: '5m', label: '5m' }
+    ];
+
+    async function loadMarketContext() {
+      const el = document.getElementById('ft-mkt');
+      if (!el) return;
+      try {
+        const res = await fetch(`/api/market-context?symbol=${encodeURIComponent(symbol)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const d = await res.json();
+        const tfs = d.timeframes || {};
+        let cards = '';
+        for (const tf of FT_TFS) {
+          const data = tfs[tf.key];
+          if (!data) continue;
+          const trendColor = data.trend === 'BULLISH' ? 'var(--neon-green)' : data.trend === 'BEARISH' ? 'var(--neon-red)' : 'var(--neon-gold)';
+          const chgVal = Number(data.changePct || 0);
+          const chgSign = chgVal >= 0 ? '+' : '';
+          const chgColor = chgVal >= 0 ? 'var(--neon-green)' : 'var(--neon-red)';
+          cards += `
+            <div class="ft-tf-card">
+              <div class="ft-tf-label">${tf.label}</div>
+              <div class="ft-tf-trend" style="color:${trendColor};">${data.trend}</div>
+              <div class="ft-tf-chg" style="color:${chgColor};">${chgSign}${chgVal.toFixed(2)}%</div>
+            </div>`;
+        }
+        const biasColor = d.bias === 'BULLISH' ? 'var(--neon-green)' : d.bias === 'BEARISH' ? 'var(--neon-red)' : 'var(--neon-gold)';
+        el.innerHTML = cards
+          ? `<div style="font-size:10px;text-transform:uppercase;letter-spacing:0.8px;color:var(--text-muted);margin:0 0 8px 0;">&#x1F4C8; Arah Market Multi-Timeframe &mdash; Bias Komposit: <span style="color:${biasColor};font-weight:700;">${d.bias || '--'}</span></div>
+             <div class="ft-tf-grid">${cards}</div>`
+          : `<div class="no-data" style="padding:8px;font-size:11px;">Menunggu data candle multi-timeframe...</div>`;
+      } catch (err) {
+        el.innerHTML = `<div class="no-data" style="padding:8px;font-size:11px;">Gagal memuat arah market: ${err.message}</div>`;
+      }
+    }
+
     function sendParamUpdate(key, value) {
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
@@ -1570,97 +1909,104 @@
      * Maps a suggestion to the override key(s) the engine actually consumes:
      * - obiThreshold/zScoreThreshold suggestions become obiMultiplier/zScoreMultiplier
      * - tpSlRatio becomes separate takeProfitPct + stopLossPct overrides
+     * Every update waits for the server ack ('strategy_param_applied') before showing
+     * success — no fake timers.
      */
-    function applyFineTuning(parameter, suggestedValue, btn) {
+    const pendingParamAcks = {};
+    let paramAckSeq = 0;
+
+    function resolveParamAck(key) {
+      const cb = pendingParamAcks[key];
+      if (cb) cb(true);
+    }
+
+    function applyParamWithAck(key, value, timeoutMs = 5000) {
+      return new Promise((resolve) => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) { resolve(false); return; }
+        let done = false;
+        const finish = (ok) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          delete pendingParamAcks[key];
+          resolve(ok);
+        };
+        const timer = setTimeout(() => finish(false), timeoutMs);
+        pendingParamAcks[key] = () => finish(true);
+        const sent = sendParamUpdate(key, value);
+        if (!sent) finish(false);
+      });
+    }
+
+    async function applyFineTuning(parameter, suggestedValue, btn) {
       btn.textContent = 'Menerapkan...';
       btn.disabled = true;
+      btn.style.borderColor = '';
+      btn.style.color = '';
 
-      let ok = true;
+      const markBtn = (ok) => {
+        btn.textContent = ok ? 'Diterapkan \u2713' : 'Gagal \u2014 coba lagi';
+        const color = ok ? 'var(--neon-green)' : 'var(--neon-red)';
+        btn.style.borderColor = color;
+        btn.style.color = color;
+        if (ok) {
+          setTimeout(loadFineTuning, 600);
+        } else {
+          btn.disabled = false;
+        }
+      };
 
+      // Build the [key, value] updates for this suggestion type
+      const updates = [];
       if (parameter === 'tpSlRatio') {
         const m = String(suggestedValue).match(/TP:([0-9.]+)\/SL:([0-9.]+)/i);
         if (m) {
-          const tp = parseFloat(m[1]);
-          const sl = parseFloat(m[2]);
-          if (!isNaN(tp)) ok = sendParamUpdate('takeProfitPct', tp) && ok;
-          if (!isNaN(sl)) ok = sendParamUpdate('stopLossPct', sl) && ok;
-        } else {
-          ok = false;
+          updates.push(['takeProfitPct', parseFloat(m[1])]);
+          updates.push(['stopLossPct', parseFloat(m[2])]);
         }
       } else if (parameter === 'obiThreshold') {
         // Engine consumes a multiplier relative to the coin's base OBI threshold
         const base = lastFtParams ? (lastFtParams.obiMultiplier || 1) : 1;
         const currentBase = lastFtParams && lastFtParams.obiThreshold ? lastFtParams.obiThreshold / base : null;
         if (currentBase && !isNaN(parseFloat(suggestedValue))) {
-          ok = sendParamUpdate('obiMultiplier', +(parseFloat(suggestedValue) / currentBase).toFixed(4));
-        } else { ok = false; }
+          updates.push(['obiMultiplier', +(parseFloat(suggestedValue) / currentBase).toFixed(4)]);
+        }
       } else if (parameter === 'zScoreThreshold') {
         const base = lastFtParams ? (lastFtParams.zScoreMultiplier || 1) : 1;
         const currentBase = lastFtParams && lastFtParams.zScoreThreshold ? lastFtParams.zScoreThreshold / base : null;
         if (currentBase && !isNaN(parseFloat(suggestedValue))) {
-          ok = sendParamUpdate('zScoreMultiplier', +(parseFloat(suggestedValue) / currentBase).toFixed(4));
-        } else { ok = false; }
+          updates.push(['zScoreMultiplier', +(parseFloat(suggestedValue) / currentBase).toFixed(4)]);
+        }
       } else {
         const value = parseFloat(suggestedValue);
-        if (!isNaN(value)) {
-          ok = sendParamUpdate(parameter, value);
-        } else { ok = false; }
+        if (!isNaN(value)) updates.push([parameter, value]);
       }
 
-      setTimeout(() => {
-        if (ok) {
-          btn.textContent = 'Diterapkan \u2713';
-          btn.style.borderColor = 'var(--neon-green)';
-          btn.style.color = 'var(--neon-green)';
-          // Refresh tampilan parameter aktif + saran setelah override tersimpan
-          setTimeout(loadFineTuning, 900);
-        } else {
-          btn.textContent = 'Gagal \u2014 coba lagi';
-          btn.style.borderColor = 'var(--neon-red)';
-          btn.style.color = 'var(--neon-red)';
-          btn.disabled = false;
-        }
-      }, 500);
-    }
-
-    // ============================================================
-    // Update Timeframe Analysis Section
-    // ============================================================
-    function updateTimeframeAnalysis(insight, sym) {
-      const container = document.getElementById('timeframe-analysis-content');
-      const symbolLabel = document.getElementById('tf-analysis-symbol');
-      if (!container || !insight) return;
-      symbolLabel.textContent = sym || '--';
-
-      const tfAnalysis = insight.timeframeAnalysis;
-      if (!tfAnalysis) {
-        container.innerHTML = '<div class="no-data">AI has not provided timeframe analysis for ' + sym + '.</div>';
+      if (updates.length === 0 || updates.some(([, v]) => v === undefined || isNaN(v))) {
+        markBtn(false);
         return;
       }
 
-      const layers = [
-        { key: 'macro', label: 'MACRO', emoji: '\u{1F4C8}', desc: '1M / 1w / 1d — Tren jangka panjang', color: 'var(--neon-purple)' },
-        { key: 'mid', label: 'MID', emoji: '\u{1F4CA}', desc: '4h / 1h / 30m — Tren intermediate', color: 'var(--neon-gold)' },
-        { key: 'micro', label: 'MICRO', emoji: '\u{1F3AF}', desc: '15m / 5m — Entry execution', color: 'var(--neon-cyan)' }
-      ];
-
-      let html = '';
-      for (const layer of layers) {
-        const data = tfAnalysis[layer.key];
-        if (!data) continue;
-        const trendClass = data.trend === 'BULLISH' ? 'value-bullish' : data.trend === 'BEARISH' ? 'value-bearish' : 'value-neutral';
-        html += `
-          <div class="thinking-item" style="border-left-color: ${layer.color}; margin-bottom: 10px;">
-            <span class="label" style="color: ${layer.color};">${layer.emoji} ${layer.label} <span style="font-weight:400;font-size:10px;color:var(--text-muted);">${layer.desc}</span></span>
-            <span class="text" style="font-weight:600;color:${data.trend === 'BULLISH' ? 'var(--neon-green)' : data.trend === 'BEARISH' ? 'var(--neon-red)' : 'var(--neon-gold)'};">${data.trend}</span>
-            <div style="font-size:12px;color:var(--text-main);margin-top:4px;">${data.summary || ''}</div>
-          </div>`;
+      const results = [];
+      for (const [key, value] of updates) {
+        results.push(await applyParamWithAck(key, value));
       }
+      markBtn(results.every(r => r));
+    }
 
-      if (!html) {
-        html = '<div class="no-data">AI has not provided timeframe analysis for ' + sym + '.</div>';
-      }
-      container.innerHTML = html;
+    async function resetFineTuning() {
+      const btn = document.getElementById('ft-reset-btn');
+      if (!btn || btn.disabled) return;
+      btn.disabled = true;
+      const originalText = '\u21BA Reset ke Default';
+      btn.textContent = 'Mereset...';
+      const ok = await applyParamWithAck('reset', 0);
+      btn.textContent = ok ? 'Reset \u2713' : 'Gagal \u2014 coba lagi';
+      setTimeout(() => {
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }, 2000);
+      if (ok) setTimeout(loadFineTuning, 600);
     }
 
     function updateATR(data, sym) {
@@ -1698,6 +2044,8 @@
 
         if (payload.type === 'thinking_detail' && payload.symbol === symbol) {
           updateThinkingUI(payload.details);
+        } else if (payload.type === 'strategy_param_applied' && payload.symbol === symbol) {
+          resolveParamAck(payload.key);
         } else if (payload.type === 'dashboard_update') {
           const models = payload.data?.models || {};
           const details = {};
@@ -1758,11 +2106,19 @@
     fetchCandles('5m');
     connectWsWithTradeHistory();
     loadFineTuning();
+    loadMarketContext();
+    fetchChartIndicators();
 
     // Re-fetch candles periodically (every 30s)
     setInterval(() => {
       fetchCandles(currentTimeframe);
     }, 30000);
+
+    // Refresh indicator overlays (S/R, FVG, POC, VWAP) + trade markers tiap 60s
+    setInterval(fetchChartIndicators, 60000);
+
+    // Refresh market direction context (server cache updates every ~3 minutes)
+    setInterval(loadMarketContext, 60000);
 
     // Handle resize
     window.addEventListener('resize', () => {

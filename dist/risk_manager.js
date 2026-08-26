@@ -315,17 +315,22 @@ export class RiskManager {
         }
         if (stats.totalTrades >= 20) {
             const winRate = stats.winRate / 100;
-            const avgWin = stats.netProfitUsd > 0
-                ? stats.grossProfitUsd / stats.winningTrades
+            // Use clean win-only / loss-only gross figures (fall back to net-derived estimate
+            // for archives recorded before grossWinUsd/grossLossUsd existed).
+            const avgWin = stats.grossWinUsd !== undefined && stats.winningTrades > 0
+                ? stats.grossWinUsd / stats.winningTrades
                 : 0;
-            const avgLoss = stats.losingTrades > 0
-                ? Math.abs(stats.grossProfitUsd - stats.netProfitUsd - stats.totalFeesUsd) / stats.losingTrades
+            const avgLoss = stats.grossLossUsd !== undefined && stats.losingTrades > 0
+                ? stats.grossLossUsd / stats.losingTrades
                 : baseRisk;
             if (avgWin > 0 && avgLoss > 0) {
                 const r = avgWin / avgLoss;
                 const kelly = winRate - ((1 - winRate) / r);
-                const fractionKelly = Math.max(0.01, Math.min(0.5, kelly * CONFIG.KELLY_FRACTION));
-                baseRisk *= fractionKelly * 10;
+                const fractionKelly = Math.max(0, Math.min(0.5, kelly * CONFIG.KELLY_FRACTION));
+                // Bounded tilt around base risk (0.75x - 1.25x). The previous formula
+                // `fractionKelly * 10` amplified risk up to ~5x right after a hot streak,
+                // which produced the doubled-position window and the worst losses of the run.
+                baseRisk *= Math.max(0.75, Math.min(1.25, 0.75 + fractionKelly));
             }
         }
         const riskDistance = Math.abs(entryPrice - stopPrice);
